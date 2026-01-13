@@ -13,7 +13,6 @@ LOGIN_URL = os.getenv("SUPPLIER_LOGIN_URL")
 
 
 def login():
-    # ---------- CHROME OPTIONS ----------
     options = webdriver.ChromeOptions()
     options.add_argument("--start-maximized")
     options.add_argument("--disable-blink-features=AutomationControlled")
@@ -21,10 +20,9 @@ def login():
     driver = webdriver.Chrome(options=options)
     wait = WebDriverWait(driver, 30)
 
-    # ---------- OPEN LOGIN PAGE ----------
     driver.get(LOGIN_URL)
 
-    # ---------- COOKIE POPUP ----------
+    # 🍪 Cookie popup
     try:
         cookie_btn = wait.until(
             EC.element_to_be_clickable((
@@ -35,23 +33,22 @@ def login():
         driver.execute_script("arguments[0].click();", cookie_btn)
         time.sleep(1)
     except TimeoutException:
-        print("ℹ️ Cookie popup not shown")
+        pass
 
-    # ---------- LOAD CREDENTIALS ----------
     email = os.getenv("SUPPLIER_EMAIL")
     password = os.getenv("SUPPLIER_PASSWORD")
 
     if not email or not password:
-        raise Exception("❌ Missing SUPPLIER_EMAIL or SUPPLIER_PASSWORD in .env")
+        raise Exception("Missing SUPPLIER_EMAIL or SUPPLIER_PASSWORD")
 
-    # ---------- EMAIL ----------
+    # ✉ Email
     email_input = wait.until(
         EC.element_to_be_clickable((By.ID, "email"))
     )
     email_input.clear()
     email_input.send_keys(email)
 
-    # ---------- PASSWORD (JS INJECTION – REQUIRED) ----------
+    # 🔐 Password (JS inject – correct)
     password_input = wait.until(
         EC.presence_of_element_located((By.ID, "pass"))
     )
@@ -68,26 +65,24 @@ def login():
 
     time.sleep(0.5)
 
-    # ---------- CLICK LOGIN BUTTON (NO ENTER KEY) ----------
+    # 🚀 Submit
     login_btn = wait.until(
         EC.element_to_be_clickable((
             By.XPATH,
             "//button[@type='submit' or contains(.,'Inloggen')]"
         ))
     )
-
     driver.execute_script("arguments[0].click();", login_btn)
 
-    # ---------- LOGIN SUCCESS CHECK ----------
+    # ✅ REAL LOGIN SUCCESS CHECK
     try:
+        # login form should disappear
         wait.until(
-            EC.presence_of_element_located(
-                (By.XPATH, "//a[contains(@href,'account')]")
-            )
+            EC.invisibility_of_element_located((By.ID, "email"))
         )
-        print("✅ LOGIN SUCCESS")
+        print("LOGIN SUCCESS")
     except TimeoutException:
         driver.save_screenshot("login_failed.png")
-        raise Exception("❌ LOGIN FAILED — screenshot saved")
+        raise Exception("LOGIN FAILED – still on login page")
 
     return driver
