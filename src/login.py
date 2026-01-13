@@ -11,7 +11,6 @@ load_dotenv()
 
 LOGIN_URL = os.getenv("SUPPLIER_LOGIN_URL")
 
-
 def login():
     options = webdriver.ChromeOptions()
     options.add_argument("--start-maximized")
@@ -22,16 +21,12 @@ def login():
 
     driver.get(LOGIN_URL)
 
-    # 🍪 Cookie popup
+    # 🍪 cookie popup
     try:
-        cookie_btn = wait.until(
-            EC.element_to_be_clickable((
-                By.XPATH,
-                "//button[contains(.,'OK') or contains(.,'Alleen')]"
-            ))
-        )
-        driver.execute_script("arguments[0].click();", cookie_btn)
-        time.sleep(1)
+        cookie = wait.until(EC.element_to_be_clickable((
+            By.XPATH, "//button[contains(.,'OK') or contains(.,'Alleen')]"
+        )))
+        driver.execute_script("arguments[0].click();", cookie)
     except TimeoutException:
         pass
 
@@ -39,50 +34,21 @@ def login():
     password = os.getenv("SUPPLIER_PASSWORD")
 
     if not email or not password:
-        raise Exception("Missing SUPPLIER_EMAIL or SUPPLIER_PASSWORD")
+        raise Exception("SUPPLIER_EMAIL / SUPPLIER_PASSWORD missing")
 
-    # ✉ Email
-    email_input = wait.until(
-        EC.element_to_be_clickable((By.ID, "email"))
-    )
-    email_input.clear()
-    email_input.send_keys(email)
+    wait.until(EC.element_to_be_clickable((By.ID, "email"))).send_keys(email)
 
-    # 🔐 Password (JS inject – correct)
-    password_input = wait.until(
-        EC.presence_of_element_located((By.ID, "pass"))
-    )
-
+    pwd = wait.until(EC.presence_of_element_located((By.ID, "pass")))
     driver.execute_script(
-        """
-        arguments[0].value = arguments[1];
-        arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
-        arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-        """,
-        password_input,
-        password
+        "arguments[0].value = arguments[1];", pwd, password
     )
 
-    time.sleep(0.5)
-
-    # 🚀 Submit
-    login_btn = wait.until(
-        EC.element_to_be_clickable((
-            By.XPATH,
-            "//button[@type='submit' or contains(.,'Inloggen')]"
-        ))
-    )
+    login_btn = wait.until(EC.element_to_be_clickable((
+        By.XPATH, "//button[@type='submit' or contains(.,'Inloggen')]"
+    )))
     driver.execute_script("arguments[0].click();", login_btn)
 
-    # ✅ REAL LOGIN SUCCESS CHECK
-    try:
-        # login form should disappear
-        wait.until(
-            EC.invisibility_of_element_located((By.ID, "email"))
-        )
-        print("LOGIN SUCCESS")
-    except TimeoutException:
-        driver.save_screenshot("login_failed.png")
-        raise Exception("LOGIN FAILED – still on login page")
+    wait.until(EC.invisibility_of_element_located((By.ID, "email")))
+    print("LOGIN SUCCESS")
 
     return driver

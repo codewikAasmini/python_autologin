@@ -2,7 +2,6 @@ import sys
 from login import login
 from place_order import place_order
 
-
 def main():
     if len(sys.argv) < 2:
         print("ORDER_FAILED")
@@ -23,14 +22,13 @@ def main():
             print("ORDER_FAILED")
 
     except Exception as e:
-        print("MAIN ERROR:", str(e))
+        print("MAIN ERROR:", e)
         print("ORDER_FAILED")
 
     finally:
+        input("Press Enter to close browser...")
         if driver:
             driver.quit()
-            print("Driver closed")
-
 
 if __name__ == "__main__":
     main()
