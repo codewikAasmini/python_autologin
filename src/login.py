@@ -20,35 +20,70 @@ def login():
     wait = WebDriverWait(driver, 30)
 
     driver.get(LOGIN_URL)
-
-    # 🍪 cookie popup
     try:
+
         cookie = wait.until(EC.element_to_be_clickable((
-            By.XPATH, "//button[contains(.,'OK') or contains(.,'Alleen')]"
+            By.XPATH, "//button[contains(.,'OK') or contains(.,'Alleen') or contains(@class, 'coi-banner__accept')]"
         )))
         driver.execute_script("arguments[0].click();", cookie)
-    except TimeoutException:
+        time.sleep(1)
+    
+        popups = driver.find_elements(By.XPATH, "//button[contains(@class, 'klaviyo-close-form')]")
+        for p in popups:
+            if p.is_displayed():
+                driver.execute_script("arguments[0].click();", p)
+    except Exception:
         pass
 
-    email = os.getenv("SUPPLIER_EMAIL")
-    password = os.getenv("SUPPLIER_PASSWORD")
+    email_val = os.getenv("SUPPLIER_EMAIL")
+    password_val = os.getenv("SUPPLIER_PASSWORD")
 
-    if not email or not password:
+    if not email_val or not password_val:
         raise Exception("SUPPLIER_EMAIL / SUPPLIER_PASSWORD missing")
+    print("Waiting for email field...")
+    def find_visible_element(xpath):
+        elements = driver.find_elements(By.XPATH, xpath)
+        for el in elements:
+            if el.is_displayed():
+                return el
+        return None
 
-    wait.until(EC.element_to_be_clickable((By.ID, "email"))).send_keys(email)
+    wait.until(lambda d: find_visible_element("//input[@id='email' or @id='customer-email']") is not None)
+    email_el = find_visible_element("//input[@id='email' or @id='customer-email']")
+    
+    print("Email field found.")
+    driver.execute_script("arguments[0].scrollIntoView(true);", email_el)
+    time.sleep(1)
+    email_el.clear()
+    email_el.send_keys(email_val)
+    print("Waiting for password field...")
+    wait.until(lambda d: find_visible_element("//input[@id='password' or @id='pass']") is not None)
+    pwd = find_visible_element("//input[@id='password' or @id='pass']")
+    print("Password field found.")
+    driver.execute_script("""
+        arguments[0].focus();
+        arguments[0].value = arguments[1];
+        arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
+        arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+    """, pwd, password_val)
 
-    pwd = wait.until(EC.presence_of_element_located((By.ID, "pass")))
-    driver.execute_script(
-        "arguments[0].value = arguments[1];", pwd, password
-    )
-
-    login_btn = wait.until(EC.element_to_be_clickable((
-        By.XPATH, "//button[@type='submit' or contains(.,'Inloggen')]"
-    )))
+    time.sleep(1)
+    print("Waiting for login button...")
+    wait.until(lambda d: find_visible_element("//button[@id='send2' and contains(@class, 'primary')]") is not None)
+    login_btn = find_visible_element("//button[@id='send2' and contains(@class, 'primary')]")
+    print("Login button found.")
     driver.execute_script("arguments[0].click();", login_btn)
-
-    wait.until(EC.invisibility_of_element_located((By.ID, "email")))
-    print("LOGIN SUCCESS")
-
+    try:
+        wait.until(lambda d: d.current_url != LOGIN_URL)
+        print("LOGIN SUCCESS")
+    except TimeoutException:
+        print("LOGIN TIMEOUT - might have failed or stayed on the same page")
+        if "login" in driver.current_url:
+     
+             try:
+                 error = driver.find_element(By.XPATH, "//div[@data-bind='html: $parent.prepareMessageForHtml(message.text)']")
+                 print(f"Login error: {error.text}")
+             except:
+                 pass
+    
     return driver

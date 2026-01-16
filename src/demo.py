@@ -130,10 +130,27 @@ def add_new_address(driver, data):
         pass
 
     # Scroll down after modal closes to ensure payment section is visible
+      # ✅ WAIT until shipping methods exist (address fully applied)
+    WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located(
+            (By.CSS_SELECTOR, ".table-checkout-shipping-method")
+        )
+    )
+
+    # ✅ SCROLL SPECIFICALLY TO PAYMENT SECTION (not bottom)
+    driver.execute_script("""
+        const payment = document.querySelector('#checkout-payment-method-load');
+        if (payment) {
+            payment.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            window.scrollBy(0, -120);
+        }
+    """)
+    time.sleep(2)
 
 # =====================================================
 # SHIPPING (FIXED)
 # =====================================================
+
 def select_shipping(driver, data):
     """
     STRICT shipping selection based on business rules:
