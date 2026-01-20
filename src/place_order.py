@@ -5,9 +5,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3005")
 
-# =====================================================
-# STEP 0 – FETCH ORDER DATA
-# =====================================================
+
 def fetch_order_data(order_id):
     res = requests.get(f"{BACKEND_URL}/v1/order-history/internal/{order_id}", timeout=15)
     res.raise_for_status()
@@ -25,7 +23,7 @@ def fetch_order_data(order_id):
 
     return {
         "sku": order.get("product", {}).get("articleNo", ""),
-        "qty": order.get("quantity", 1),
+        "qty": order.get("quantity"),
         "firstName": raw.get("firstname", ""),
         "lastName": raw.get("lastname", ""),
         "company": raw.get("companyName", ""),
@@ -75,6 +73,24 @@ def close_popups(driver):
 # =====================================================
 # ADDRESS MODAL
 # =====================================================
+
+def unlock_body_and_force_scroll(driver):
+    print("🔓 Unlocking body & forcing scroll after address modal")
+
+    driver.execute_script("""
+        // Remove any leftover overlays / locks
+        document.querySelectorAll('.modals-overlay, .modal-popup, .loading-mask')
+            .forEach(e => e.remove());
+
+        document.body.classList.remove('modal-open', '_has-modal');
+        document.body.style.overflow = 'auto';
+        document.body.style.position = 'static';
+
+        // Force real scroll event
+        window.scrollTo(0, document.body.scrollHeight * 0.4);
+        window.dispatchEvent(new Event('scroll'));
+    """)
+    time.sleep(1.5)
 def click_ship_here(driver):
     driver.execute_script("document.activeElement.blur();")
     time.sleep(0.3)
@@ -114,7 +130,6 @@ def add_new_address(driver, data):
     click_ship_here(driver)
     wait_loader(driver)
 
-    # Handle "Save address?" popup if it appears
     try:
         no_thanks_btn = WebDriverWait(driver, 5).until(
             EC.element_to_be_clickable((
@@ -123,61 +138,52 @@ def add_new_address(driver, data):
             ))
         )
         driver.execute_script("arguments[0].click();", no_thanks_btn)
-        print("✅ Clicked 'No thanks' on save address popup")
         time.sleep(0.5)
     except:
-        print("ℹ️ No 'Save address' popup appeared")
         pass
 
-    # Scroll down after modal closes to ensure payment section is visible
+    # ✅ THIS WAS MISSING
+    unlock_body_and_force_scroll(driver)
 
 # =====================================================
 # SHIPPING (FIXED)
 # =====================================================
 def select_shipping(driver, data):
     """
-    STRICT shipping selection based on business rules:
-    - NL  → DPD - Nederlands Zakelijke levering
-    - BE private → GLS - Belgische Privé bezorging
-    - BE business → GLS - Belgische Zakelijke bezorging
+    STABLE shipping selection:
+    - NL → DPD (strict)
+    - BE → GLS (carrier-based, safe)
     """
-
-    if data["country"] == "NL":
-        carrier = "DPD"
-        shipping_text = "Nederlands Zakelijke levering"
-
-    elif data["country"] == "BE" and data["is_company"]:
-        carrier = "GLS"
-        shipping_text = "Belgische Zakelijke bezorging"
-
-    elif data["country"] == "BE":
-        carrier = "GLS"
-        shipping_text = "Belgische Privé bezorging"
-
-    else:
-        raise Exception(f"❌ Unsupported country: {data['country']}")
-
-    print(f"🚚 Selecting shipping: {carrier} - {shipping_text}")
 
     wait_loader(driver)
     time.sleep(1)
-
-    # Scroll to shipping section
     driver.execute_script("""
         const el = document.querySelector('.table-checkout-shipping-method');
         if (el) el.scrollIntoView({block:'center'});
     """)
     time.sleep(1)
 
-    # STRICT selector — no fallbacks
-    radio = WebDriverWait(driver, 30).until(
-        EC.element_to_be_clickable((
-            By.XPATH,
-            f"//tr[contains(., '{carrier}') and contains(., '{shipping_text}')]//input[@type='radio']"
-        ))
-    )
+    if data["country"] == "NL":
+        print("🚚 Selecting NL shipping: DPD")
 
-    # Click via JS (Magento-safe)
+        radio = WebDriverWait(driver, 30).until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                "//tr[contains(., 'DPD')]//input[@type='radio']"
+            ))
+        )
+
+    elif data["country"] == "BE":
+        print("🚚 Selecting BE shipping: GLS")
+        radio = WebDriverWait(driver, 30).until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                "//tr[contains(., 'GLS')]//input[@type='radio']"
+            ))
+        )
+
+    else:
+        raise Exception(f"❌ Unsupported country: {data['country']}")
     driver.execute_script("""
         arguments[0].scrollIntoView({block:'center'});
         arguments[0].checked = true;
@@ -185,7 +191,6 @@ def select_shipping(driver, data):
         arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
     """, radio)
 
-    # Wait until Magento confirms shipping is set
     WebDriverWait(driver, 30).until(
         lambda d: d.execute_script("""
             try {
@@ -195,97 +200,139 @@ def select_shipping(driver, data):
         """)
     )
 
-    print(f"✅ Shipping locked: {carrier} - {shipping_text}")
+    print("✅ Shipping selected & locked")
+
 
 
 # =====================================================
 # PAYMENT – BANK TRANSFER (SIMPLIFIED & ROBUST)
 # =====================================================
 
-def scroll_to_payment(driver):
-    print("📜 Scrolling to payment section...")
+def wait_shipping_confirmed(driver):
+    print("⏳ Waiting for shipping to be confirmed by Magento")
 
     WebDriverWait(driver, 30).until(
-        EC.presence_of_element_located(
-            (By.ID, "checkout-payment-method-load")
-        )
-    )
-
-    time.sleep(2)
-
-    driver.execute_script("""
-        const el = document.querySelector('#checkout-payment-method-load');
-        if (el) {
-            el.scrollIntoView({block: 'center', behavior: 'smooth'});
-            window.scrollBy(0, -120);
-        }
-    """)
-
-    time.sleep(1)
-    print("✅ Payment section visible")
-
-def activate_payment_step(driver):
-    driver.execute_script("""
-        const body = document.body;
-
-        body.classList.remove('fc-step-shipping');
-        body.classList.add('fc-step-payment');
-
-        const payment = document.querySelector('#checkout-payment-method-load');
-        if (payment) {
-            payment.scrollIntoView({block:'center'});
-        }
-    """)
-    time.sleep(1)
-
-    # Wait for payment methods to load after step activation
-    WebDriverWait(driver, 30).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, 'input[value="banktransfer"]'))
-    )
-    time.sleep(1)
-def select_bank_transfer(driver):
-    print("💳 Selecting Bankoverschrijving as default")
-
-    # Wait for payment methods to load and be clickable
-    radio = WebDriverWait(driver, 30).until(
-        EC.element_to_be_clickable((By.CSS_SELECTOR, 'input[value="banktransfer"]'))
-    )
-
-    # Scroll into view and click
-    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", radio)
-    time.sleep(0.5)
-    radio.click()
-    time.sleep(1)
-
-    # Dispatch change events to ensure Magento recognizes the selection
-    driver.execute_script("""
-        const radio = document.querySelector('input[value="banktransfer"]');
-        if (radio) {
-            radio.checked = true;
-            radio.dispatchEvent(new Event('click', { bubbles: true }));
-            radio.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-    """)
-
-    # Ensure it's active in UI
-    driver.execute_script("""
-        document.querySelectorAll('.payment-method').forEach(pm => pm.classList.remove('_active'));
-        const radio = document.querySelector('input[value="banktransfer"]');
-        if (radio) {
-            const el = radio.closest('.payment-method');
-            if (el) el.classList.add('_active');
-        }
-    """)
-
-    # Verify selection
-    WebDriverWait(driver, 10).until(
         lambda d: d.execute_script("""
-            const radio = document.querySelector('.payment-method._active input[value="banktransfer"]');
-            return radio && radio.checked;
+            try {
+                const q = require('Magento_Checkout/js/model/quote');
+                return q.shippingMethod() !== null;
+            } catch(e) { return false; }
         """)
     )
 
-    print("✅ Bankoverschrijving ACTIVE (default selected)")
+    print("✅ Shipping confirmed & stable")
+
+def handle_save_address_popup(driver):
+    print("📦 Checking for 'Save address' popup")
+    try:
+        no_btn = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                "//button[contains(.,'No thanks') or contains(.,'Nee') or contains(.,'Niet opslaan')]"
+            ))
+        )
+        driver.execute_script("arguments[0].click();", no_btn)
+        print("✅ Clicked 'No thanks' on save-address popup")
+    
+        WebDriverWait(driver, 5).until(
+            EC.invisibility_of_element_located((By.CSS_SELECTOR, ".modals-overlay"))
+        )
+    except:
+        print("ℹ️ No 'Save address' popup found or already closed")
+
+def unlock_and_scroll_to_payment(driver):
+    print("🔓 Force removing any blocking overlays & scrolling")
+
+    driver.execute_script("""
+        // Force remove any remaining modals or overlays that block clicks
+        document.querySelectorAll('.modals-overlay, .modal-popup, .loading-mask').forEach(e => e.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.overflow = 'auto';
+
+        const payment = document.getElementById('checkout-payment-method-load');
+        if (payment) {
+            payment.scrollIntoView({ block: 'center' });
+            window.scrollBy(0, -100);
+        }
+    """)
+    time.sleep(1)
+
+def human_scroll_to_payment(driver):
+    print("🖱️ Human-like scroll to payment section")
+
+    driver.execute_script("""
+        const target = document.getElementById('checkout-payment-method-load');
+        if (!target) return;
+
+        const rect = target.getBoundingClientRect();
+        const targetY = rect.top + window.pageYOffset - 200;
+
+        let currentY = window.pageYOffset;
+        const step = 120;
+
+        const interval = setInterval(() => {
+            if (currentY >= targetY) {
+                clearInterval(interval);
+                target.scrollIntoView({ block: 'center' });
+                window.dispatchEvent(new Event('scroll'));
+            } else {
+                window.scrollBy(0, step);
+                currentY += step;
+            }
+        }, 60);
+    """)
+    time.sleep(2)
+def force_payment_renderer(driver):
+    print("⚙️ Forcing Magento payment renderer")
+
+    driver.execute_script("""
+        try {
+            const service = require('Magento_Checkout/js/model/payment-service');
+            const methods = service.getAvailablePaymentMethods();
+
+            methods.forEach(m => {
+                if (m.method === 'banktransfer') {
+                    require('Magento_Checkout/js/action/select-payment-method')(m);
+                }
+            });
+        } catch(e) {}
+    """)
+    time.sleep(1)
+
+def select_bank_transfer(driver):
+    print("💳 Selecting Bankoverschrijving (viewport + KO safe)")
+
+    wait = WebDriverWait(driver, 30)
+
+    # 🔥 REAL human scroll
+    human_scroll_to_payment(driver)
+
+    # 🔥 Force Magento payment JS
+    force_payment_renderer(driver)
+
+    # Wait until radio appears
+    radio = wait.until(
+        EC.presence_of_element_located((By.ID, "banktransfer"))
+    )
+
+    # Final KO-safe click
+    driver.execute_script("""
+        arguments[0].checked = true;
+        arguments[0].dispatchEvent(new Event('click', { bubbles: true }));
+        arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+    """, radio)
+
+    # ✅ Confirm Magento state
+    wait.until(lambda d: d.execute_script("""
+        try {
+            return require('Magento_Checkout/js/model/quote')
+                .paymentMethod()?.method === 'banktransfer';
+        } catch(e) { return false; }
+    """))
+
+    print("✅ Bankoverschrijving SELECTED & LOCKED")
+
+
 
 
 # =====================================================
@@ -327,8 +374,9 @@ def place_order(driver, order_id):
 
     add_new_address(driver, data)
     select_shipping(driver, data)
-    scroll_to_payment(driver)
-    activate_payment_step(driver)
+    wait_shipping_confirmed(driver)
+    handle_save_address_popup(driver)
+    unlock_and_scroll_to_payment(driver)  
     select_bank_transfer(driver)
 
     print("🛑 FINAL CHECK READY — ORDER NOT PLACED YET")
