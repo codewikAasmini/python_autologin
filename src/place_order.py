@@ -494,7 +494,6 @@ def click_place_order(driver):
     print("🏁 Finished placement attempts.")
     return True
 
-
 # =====================================================
 # MAIN FLOW
 # =====================================================
