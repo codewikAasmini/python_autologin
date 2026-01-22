@@ -2,7 +2,8 @@ import os, re, time, requests
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.actions.wheel_input import ScrollOrigin
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3005")
 
 
@@ -23,7 +24,7 @@ def fetch_order_data(order_id):
 
     return {
         "sku": order.get("product", {}).get("articleNo", ""),
-        "qty": order.get("quantity"),
+        "qty": order.get("quantity") or 1,
         "firstName": raw.get("firstname", ""),
         "lastName": raw.get("lastname", ""),
         "company": raw.get("companyName", ""),
@@ -73,6 +74,13 @@ def close_popups(driver):
 # =====================================================
 # ADDRESS MODAL
 # =====================================================
+def real_mouse_scroll(driver, pixels=800):
+    print("🖱️ Real mouse wheel scroll")
+
+    origin = ScrollOrigin.from_viewport(0, 0)
+    ActionChains(driver).scroll_from_origin(origin, 0, pixels).perform()
+    time.sleep(1)
+
 
 def unlock_body_and_force_scroll(driver):
     print("🔓 Unlocking body & forcing scroll after address modal")
@@ -130,19 +138,7 @@ def add_new_address(driver, data):
     click_ship_here(driver)
     wait_loader(driver)
 
-    try:
-        no_thanks_btn = WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable((
-                By.XPATH,
-                "//button[contains(text(), 'No thanks') or contains(text(), 'Nee')]"
-            ))
-        )
-        driver.execute_script("arguments[0].click();", no_thanks_btn)
-        time.sleep(0.5)
-    except:
-        pass
-
-    # ✅ THIS WAS MISSING
+    # Force unlock as some popups (Save address?) might appear here or later
     unlock_body_and_force_scroll(driver)
 
 # =====================================================
@@ -150,40 +146,54 @@ def add_new_address(driver, data):
 # =====================================================
 def select_shipping(driver, data):
     """
-    STABLE shipping selection:
-    - NL → DPD (strict)
-    - BE → GLS (carrier-based, safe)
+    EXACT shipping selection based on business rules
     """
 
     wait_loader(driver)
     time.sleep(1)
+
     driver.execute_script("""
         const el = document.querySelector('.table-checkout-shipping-method');
         if (el) el.scrollIntoView({block:'center'});
     """)
     time.sleep(1)
 
+    # ---------- NETHERLANDS ----------
     if data["country"] == "NL":
-        print("🚚 Selecting NL shipping: DPD")
+        print("🚚 NL → DPD - Nederlands Zakelijke levering")
 
-        radio = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((
-                By.XPATH,
-                "//tr[contains(., 'DPD')]//input[@type='radio']"
-            ))
+        xpath = (
+            "//tr[.//text()[contains(.,'DPD') "
+            "and contains(.,'Nederlands')]]//input[@type='radio']"
         )
 
+    # ---------- BELGIUM ----------
     elif data["country"] == "BE":
-        print("🚚 Selecting BE shipping: GLS")
-        radio = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable((
-                By.XPATH,
-                "//tr[contains(., 'GLS')]//input[@type='radio']"
-            ))
-        )
+
+        if data["is_company"]:
+            print("🚚 BE Business → GLS - Belgische Zakelijke bezorging")
+
+            xpath = (
+                "//tr[.//text()[contains(.,'GLS') "
+                "and contains(.,'Zakelijke')]]//input[@type='radio']"
+            )
+
+        else:
+            print("🚚 BE Private → GLS - Belgische Privé bezorging")
+
+            xpath = (
+                "//tr[.//text()[contains(.,'GLS') "
+                "and contains(.,'Privé')]]//input[@type='radio']"
+            )
 
     else:
         raise Exception(f"❌ Unsupported country: {data['country']}")
+
+    # ---------- CLICK RADIO ----------
+    radio = WebDriverWait(driver, 30).until(
+        EC.element_to_be_clickable((By.XPATH, xpath))
+    )
+
     driver.execute_script("""
         arguments[0].scrollIntoView({block:'center'});
         arguments[0].checked = true;
@@ -191,6 +201,7 @@ def select_shipping(driver, data):
         arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
     """, radio)
 
+    # ---------- CONFIRM MAGENTO STATE ----------
     WebDriverWait(driver, 30).until(
         lambda d: d.execute_script("""
             try {
@@ -200,10 +211,7 @@ def select_shipping(driver, data):
         """)
     )
 
-    print("✅ Shipping selected & locked")
-
-
-
+    print("✅ Shipping selected correctly")
 # =====================================================
 # PAYMENT – BANK TRANSFER (SIMPLIFIED & ROBUST)
 # =====================================================
@@ -221,24 +229,51 @@ def wait_shipping_confirmed(driver):
     )
 
     print("✅ Shipping confirmed & stable")
-
+  
+  
 def handle_save_address_popup(driver):
-    print("📦 Checking for 'Save address' popup")
-    try:
-        no_btn = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((
-                By.XPATH,
-                "//button[contains(.,'No thanks') or contains(.,'Nee') or contains(.,'Niet opslaan')]"
-            ))
-        )
-        driver.execute_script("arguments[0].click();", no_btn)
-        print("✅ Clicked 'No thanks' on save-address popup")
-    
-        WebDriverWait(driver, 5).until(
-            EC.invisibility_of_element_located((By.CSS_SELECTOR, ".modals-overlay"))
-        )
-    except:
-        print("ℹ️ No 'Save address' popup found or already closed")
+    print("📦 Handling 'Save address' popup (No thanks default)")
+
+    driver.execute_script("""
+        // 1️⃣ Try clicking "No thanks" button explicitly
+        const buttons = Array.from(document.querySelectorAll('button, a, span'));
+        const noThanks = buttons.find(b => {
+            const t = (b.innerText || '').toLowerCase();
+            return t.includes('no thanks') || t.includes('nee') || t.includes('no, thanks');
+        });
+
+        if (noThanks) {
+            noThanks.click();
+            console.log('Clicked NO THANKS');
+        }
+
+        // 2️⃣ Hard-remove popup if still present
+        document.querySelectorAll(
+            'aside, .modal-popup, .modals-overlay, .ui-widget-overlay'
+        ).forEach(e => e.remove());
+
+        // 3️⃣ Fully unlock page scroll
+        document.body.classList.remove('modal-open', '_has-modal');
+        document.body.style.overflow = 'auto';
+        document.body.style.position = 'static';
+
+        // 4️⃣ Force browser scroll event (VERY IMPORTANT)
+        window.scrollBy(0, 1);
+        window.dispatchEvent(new Event('scroll'));
+    """)
+    time.sleep(1)
+    print("✅ Address popup cleared & page unlocked")
+
+
+def confirm_shipping_js(driver):
+    WebDriverWait(driver, 30).until(
+        lambda d: d.execute_script("""
+            try {
+                const quote = require('Magento_Checkout/js/model/quote');
+                return quote.shippingMethod() && quote.shippingMethod().method_code;
+            } catch(e) { return false; }
+        """)
+    )
 
 def unlock_and_scroll_to_payment(driver):
     print("🔓 Force removing any blocking overlays & scrolling")
@@ -298,41 +333,166 @@ def force_payment_renderer(driver):
         } catch(e) {}
     """)
     time.sleep(1)
+def force_totals_recalculation(driver):
+    print("🔄 Forcing totals recalculation")
 
-def select_bank_transfer(driver):
-    print("💳 Selecting Bankoverschrijving (viewport + KO safe)")
+    WebDriverWait(driver, 30).until(
+        lambda d: d.execute_script("""
+            try {
+                const quote = require('Magento_Checkout/js/model/quote');
+                const totalsProcessor =
+                    require('Magento_Checkout/js/model/cart/totals-processor/default');
 
-    wait = WebDriverWait(driver, 30)
-
-    # 🔥 REAL human scroll
-    human_scroll_to_payment(driver)
-
-    # 🔥 Force Magento payment JS
-    force_payment_renderer(driver)
-
-    # Wait until radio appears
-    radio = wait.until(
-        EC.presence_of_element_located((By.ID, "banktransfer"))
+                if (quote.shippingMethod()) {
+                    totalsProcessor.estimateTotals();
+                    return true;
+                }
+                return false;
+            } catch(e) { return false; }
+        """)
     )
 
-    # Final KO-safe click
+    # wait until totals exist
+    WebDriverWait(driver, 30).until(
+        lambda d: d.execute_script("""
+            try {
+                return require('Magento_Checkout/js/model/quote').totals() !== null;
+            } catch(e) { return false; }
+        """)
+    )
+
+    print("✅ Totals ready")
+    
+    
+def select_bank_transfer(driver):
+    print("💳 Selecting Bankoverschrijving (Bank Transfer)")
+
+    # 1️⃣ Scroll payment section into view
     driver.execute_script("""
+        const el = document.getElementById('checkout-payment-method-load');
+        if (el) el.scrollIntoView({ block: 'center' });
+    """)
+    time.sleep(1)
+
+    # 2️⃣ Click RADIO input (UI level)
+    bank_radio_xpath = (
+        "//label[.//text()[contains(.,'Bankoverschrijving')]]"
+        "//input[@type='radio']"
+    )
+
+    radio = WebDriverWait(driver, 30).until(
+        EC.presence_of_element_located((By.XPATH, bank_radio_xpath))
+    )
+
+    driver.execute_script("""
+        arguments[0].scrollIntoView({ block: 'center' });
         arguments[0].checked = true;
         arguments[0].dispatchEvent(new Event('click', { bubbles: true }));
         arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
     """, radio)
 
-    # ✅ Confirm Magento state
-    wait.until(lambda d: d.execute_script("""
+    time.sleep(1)
+
+    # 3️⃣ Force Magento KO payment state
+    driver.execute_script("""
         try {
-            return require('Magento_Checkout/js/model/quote')
-                .paymentMethod()?.method === 'banktransfer';
-        } catch(e) { return false; }
-    """))
+            const quote = require('Magento_Checkout/js/model/quote');
+            const paymentService = require('Magento_Checkout/js/model/payment-service');
+            const selectAction = require('Magento_Checkout/js/action/select-payment-method');
 
-    print("✅ Bankoverschrijving SELECTED & LOCKED")
+            const method = paymentService.getAvailablePaymentMethods()
+                .find(m => m.method === 'banktransfer');
 
+            if (method) {
+                selectAction(method);
+                quote.paymentMethod(method);
+            }
+        } catch(e) {
+            console.error('Bank transfer JS select failed', e);
+        }
+    """)
 
+    # 4️⃣ VERIFY it is selected
+    WebDriverWait(driver, 30).until(
+        lambda d: d.execute_script("""
+            try {
+                return require('Magento_Checkout/js/model/quote')
+                    .paymentMethod()?.method === 'banktransfer';
+            } catch(e) { return false; }
+        """)
+    )
+
+    print("✅ Bankoverschrijving selected & locked")
+
+def force_totals(driver):
+    driver.execute_script("""
+        try {
+            const quote = require('Magento_Checkout/js/model/quote');
+            const totalsProcessor =
+                require('Magento_Checkout/js/model/cart/totals-processor/default');
+
+            if (quote.shippingMethod()) {
+                totalsProcessor.estimateTotals();
+            }
+        } catch(e) {}
+    """)
+def accept_terms(driver):
+    driver.execute_script("""
+        document.querySelectorAll(
+            '.checkout-agreement input[type="checkbox"]'
+        ).forEach(cb => {
+            if (!cb.checked) cb.click();
+        });
+    """)
+def click_place_order(driver):
+    print("🚀 Finalizing order placement")
+    
+    for i in range(5):
+        print(f"🔄 Attempting to click 'Plaats bestelling' ({i+1}/5)")
+        
+        # 1. Final popup cleanup
+        handle_save_address_popup(driver)
+        wait_loader(driver)
+        
+        # 2. Check for Agreement checkbox (again, just in case)
+        driver.execute_script("""
+            document.querySelectorAll('input[type="checkbox"].required-entry, .checkout-agreement input[type="checkbox"]')
+                .forEach(cb => { if(!cb.checked) cb.click(); });
+        """)
+        time.sleep(0.5)
+
+        # 3. Find and click button
+        try:
+            btn = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "button.action.primary.checkout"))
+            )
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+            time.sleep(1)
+            driver.execute_script("arguments[0].click();", btn)
+            print("✅ 'Plaats bestelling' clicked")
+        except:
+            print("⚠️ Button not clickable yet...")
+            continue
+
+        # 4. Verification loop
+        print("⏳ Verification...")
+        for _ in range(10):
+            time.sleep(1)
+            if "/success" in driver.current_url or "success" in driver.current_url.lower():
+                print("🎉 SUCCESS! Order placed.")
+                return True
+            
+            # Error check
+            errs = driver.find_elements(By.CSS_SELECTOR, ".message-error")
+            if errs and any(e.is_displayed() for e in errs):
+                print(f"❌ Magento Error: {errs[0].text}")
+                # If error is about payment, retry selection
+                if "betaalmethode" in errs[0].text.lower():
+                    select_bank_transfer(driver)
+                break
+                
+    print("🏁 Finished placement attempts.")
+    return True
 
 
 # =====================================================
@@ -373,13 +533,21 @@ def place_order(driver, order_id):
     wait_loader(driver)
 
     add_new_address(driver, data)
+    real_mouse_scroll(driver, 900)
     select_shipping(driver, data)
     wait_shipping_confirmed(driver)
     handle_save_address_popup(driver)
-    unlock_and_scroll_to_payment(driver)  
+    force_totals_recalculation(driver)
+    real_mouse_scroll(driver, 600)  
+    confirm_shipping_js(driver)
+    handle_save_address_popup(driver)
+    unlock_and_scroll_to_payment(driver)
+    human_scroll_to_payment(driver)
     select_bank_transfer(driver)
+    force_totals(driver)
+    wait_loader(driver)
+    accept_terms(driver)
+    click_place_order(driver)
 
-    print("🛑 FINAL CHECK READY — ORDER NOT PLACED YET")
-    print("👉 Review details manually, then click 'Plaats bestelling'")
-
-    return True
+    print("🏁 Finished placement attempts.")
+    return False 
