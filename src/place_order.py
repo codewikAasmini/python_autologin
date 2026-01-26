@@ -412,7 +412,7 @@ def select_bank_transfer(driver):
         }
     """)
 
-    # 4️⃣ VERIFY it is selected
+
     WebDriverWait(driver, 30).until(
         lambda d: d.execute_script("""
             try {
@@ -530,7 +530,6 @@ def place_order(driver, order_id):
     driver.get("https://www.cchobby.nl/checkout/")
     wait.until(EC.url_contains("/checkout"))
     wait_loader(driver)
-
     add_new_address(driver, data)
     real_mouse_scroll(driver, 900)
     select_shipping(driver, data)
