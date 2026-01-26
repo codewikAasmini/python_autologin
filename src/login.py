@@ -17,7 +17,7 @@ def login():
     options = webdriver.ChromeOptions()
 
     # Force chromium binary
-    options.binary_location = "/snap/bin/chromium"
+    options.binary_location = "/usr/bin/google-chrome"
 
     # create writable profile
     profile_dir = tempfile.mkdtemp(prefix="chrome-profile-")
