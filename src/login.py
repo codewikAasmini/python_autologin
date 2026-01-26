@@ -7,6 +7,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from dotenv import load_dotenv
 import tempfile
+import os
 
 load_dotenv()
 
@@ -15,18 +16,26 @@ LOGIN_URL = os.getenv("SUPPLIER_LOGIN_URL")
 def login():
     options = webdriver.ChromeOptions()
 
+    # Force chromium binary
     options.binary_location = "/snap/bin/chromium"
 
-    tmp_profile = tempfile.mkdtemp()
-    options.add_argument(f"--user-data-dir={tmp_profile}")
+    # create writable profile
+    profile_dir = tempfile.mkdtemp(prefix="chrome-profile-")
+    options.add_argument(f"--user-data-dir={profile_dir}")
 
+    # hard VPS flags
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
+    options.add_argument("--disable-setuid-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
+
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--disable-features=VizDisplayCompositor")
+
+    # Force HOME so snap doesn't choke
+    os.environ["HOME"] = "/tmp"
 
     driver = webdriver.Chrome(options=options)
     wait = WebDriverWait(driver, 30)
