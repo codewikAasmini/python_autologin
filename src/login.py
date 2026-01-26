@@ -14,6 +14,9 @@ LOGIN_URL = os.getenv("SUPPLIER_LOGIN_URL")
 def login():
     options = webdriver.ChromeOptions()
 
+     # 🔥 FORCE correct binary
+    options.binary_location = "/snap/bin/chromium"
+
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
