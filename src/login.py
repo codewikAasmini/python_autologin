@@ -6,6 +6,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from dotenv import load_dotenv
+import tempfile
 
 load_dotenv()
 
@@ -14,8 +15,10 @@ LOGIN_URL = os.getenv("SUPPLIER_LOGIN_URL")
 def login():
     options = webdriver.ChromeOptions()
 
-     # 🔥 FORCE correct binary
     options.binary_location = "/snap/bin/chromium"
+
+    tmp_profile = tempfile.mkdtemp()
+    options.add_argument(f"--user-data-dir={tmp_profile}")
 
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
@@ -23,6 +26,7 @@ def login():
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-features=VizDisplayCompositor")
 
     driver = webdriver.Chrome(options=options)
     wait = WebDriverWait(driver, 30)
