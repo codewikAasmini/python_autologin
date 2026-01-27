@@ -86,7 +86,55 @@ def close_popups(driver):
         document.body.style.overflow='auto';
     """
     )
-
+def clear_cart(driver):
+    print("Checking and clearing old cart items")
+ 
+    driver.get("https://www.cchobby.nl/checkout/cart/")
+    time.sleep(3)
+ 
+    while True:
+        remove_buttons = driver.find_elements(
+            By.CSS_SELECTOR,
+            "a.action.action-delete, button.action-delete"
+        )
+ 
+        if not remove_buttons:
+            print("Cart already empty")
+            break
+ 
+        print(f"Removing {len(remove_buttons)} item(s) from cart")
+ 
+        for btn in remove_buttons:
+            try:
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});", btn
+                )
+                time.sleep(0.5)
+                driver.execute_script("arguments[0].click();", btn)
+                time.sleep(2)
+ 
+                # confirm popup if appears
+                try:
+                    confirm = WebDriverWait(driver, 5).until(
+                        EC.element_to_be_clickable(
+                            (By.CSS_SELECTOR, "button.action-primary.action-accept")
+                        )
+                    )
+                    confirm.click()
+                except:
+                    pass
+ 
+                time.sleep(3)
+            except:
+                pass
+ 
+    # wait until cart empty message
+    WebDriverWait(driver, 15).until(
+        lambda d: "U heeft geen artikelen" in d.page_source
+        or "winkelwagen is leeg" in d.page_source.lower()
+    )
+ 
+    print("Cart cleared successfully")
 
 # =====================================================
 # ADDRESS MODAL
@@ -489,7 +537,6 @@ def select_bank_transfer(driver):
     )
     time.sleep(1)
 
-    # REAL click
     driver.execute_script(
         """
         arguments[0].dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
@@ -568,7 +615,6 @@ def click_shipping_next(driver):
 
     print("➡️ Clicking shipping NEXT")
 
-    # wait shipping saved in KO
     WebDriverWait(driver, 60).until(
         lambda d: d.execute_script("""
             try {
@@ -578,14 +624,12 @@ def click_shipping_next(driver):
         """)
     )
 
-    # wait no loaders
     WebDriverWait(driver, 60).until(
         EC.invisibility_of_element_located(
             (By.CSS_SELECTOR, ".loading-mask, .loader")
         )
     )
 
-    # wait enabled button
     btn = WebDriverWait(driver, 60).until(
         lambda d: d.find_element(
             By.CSS_SELECTOR,
@@ -602,8 +646,6 @@ def click_shipping_next(driver):
     driver.execute_script("""
         arguments[0].click();
     """, btn)
-
-    # wait payment step DOM
     WebDriverWait(driver, 60).until(
         EC.presence_of_element_located(
             (By.ID, "checkout-step-payment")
@@ -654,11 +696,9 @@ def click_place_order(driver):
     for i in range(5):
         print(f"🔄 Attempting to click 'Plaats bestelling' ({i+1}/5)")
 
-        # 1. Final popup cleanup
         handle_save_address_popup(driver)
         wait_loader(driver)
 
-        # 2. Check for Agreement checkbox (again, just in case)
         driver.execute_script(
             """
             document.querySelectorAll('input[type="checkbox"].required-entry, .checkout-agreement input[type="checkbox"]')
@@ -667,7 +707,6 @@ def click_place_order(driver):
         )
         time.sleep(0.5)
 
-        # 3. Find and click button
         try:
             btn = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable(
@@ -682,7 +721,6 @@ def click_place_order(driver):
             print("⚠️ Button not clickable yet...")
             continue
 
-        # 4. Verification loop
         print("⏳ Verification...")
         for _ in range(10):
             time.sleep(1)
@@ -693,11 +731,11 @@ def click_place_order(driver):
                 print("🎉 SUCCESS! Order placed.")
                 return True
 
-            # Error check
+     
             errs = driver.find_elements(By.CSS_SELECTOR, ".message-error")
             if errs and any(e.is_displayed() for e in errs):
                 print(f"❌ Magento Error: {errs[0].text}")
-                # If error is about payment, retry selection
+              
                 if "betaalmethode" in errs[0].text.lower():
                     select_bank_transfer(driver)
                 break
@@ -775,17 +813,17 @@ def set_field_js(driver, el, value):
         value,
     )
 
-
 # =====================================================
 # MAIN FLOW
 # =====================================================
 def place_order(driver, order_id):
     wait = WebDriverWait(driver, 60)
     data = fetch_order_data(order_id)
-
     driver.get("https://www.cchobby.nl/")
     time.sleep(3)
     close_popups(driver)
+
+    clear_cart(driver)  
 
     search = driver.find_element(By.NAME, "q")
     search.send_keys(data["sku"])
@@ -834,8 +872,6 @@ def place_order(driver, order_id):
         select_bank_transfer(driver)
     except:
         force_banktransfer_js(driver)
-
-    # final verify
     WebDriverWait(driver, 30).until(
         lambda d: d.execute_script(
             """
