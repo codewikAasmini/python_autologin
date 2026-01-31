@@ -4,6 +4,7 @@ from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.actions.wheel_input import ScrollOrigin
+from selenium.webdriver.common.keys import Keys
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3005")
 
@@ -30,7 +31,7 @@ def fetch_order_data(order_id):
 
     raw_phone = (raw.get("phone") or "").strip()
     digits = re.sub(r"[^\d]", "", raw_phone)
-    phone = digits if digits else "0600000000"
+    phone = digits if digits else ""
 
     return {
         "sku": order.get("product", {}).get("articleNo", ""),
@@ -86,24 +87,25 @@ def close_popups(driver):
         document.body.style.overflow='auto';
     """
     )
+
+
 def clear_cart(driver):
     print("Checking and clearing old cart items")
- 
+
     driver.get("https://www.cchobby.nl/checkout/cart/")
     time.sleep(3)
- 
+
     while True:
         remove_buttons = driver.find_elements(
-            By.CSS_SELECTOR,
-            "a.action.action-delete, button.action-delete"
+            By.CSS_SELECTOR, "a.action.action-delete, button.action-delete"
         )
- 
+
         if not remove_buttons:
             print("Cart already empty")
             break
- 
+
         print(f"Removing {len(remove_buttons)} item(s) from cart")
- 
+
         for btn in remove_buttons:
             try:
                 driver.execute_script(
@@ -112,7 +114,7 @@ def clear_cart(driver):
                 time.sleep(0.5)
                 driver.execute_script("arguments[0].click();", btn)
                 time.sleep(2)
- 
+
                 # confirm popup if appears
                 try:
                     confirm = WebDriverWait(driver, 5).until(
@@ -123,18 +125,19 @@ def clear_cart(driver):
                     confirm.click()
                 except:
                     pass
- 
+
                 time.sleep(3)
             except:
                 pass
- 
+
     # wait until cart empty message
-    WebDriverWait(driver, 15).until(
-        lambda d: "U heeft geen artikelen" in d.page_source
-        or "winkelwagen is leeg" in d.page_source.lower()
+    WebDriverWait(driver, 20).until(
+        lambda d: "winkelwagen" in d.page_source.lower()
+        and ("geen" in d.page_source.lower() or "empty" in d.page_source.lower())
     )
- 
+
     print("Cart cleared successfully")
+
 
 # =====================================================
 # ADDRESS MODAL
@@ -369,10 +372,6 @@ def handle_save_address_popup(driver):
             console.log('Clicked NO THANKS');
         }
 
-        // 2️⃣ Hard-remove popup if still present
-        document.querySelectorAll(
-            'aside, .modal-popup, .modals-overlay, .ui-widget-overlay'
-        ).forEach(e => e.remove());
 
         // 3️⃣ Fully unlock page scroll
         document.body.classList.remove('modal-open', '_has-modal');
@@ -616,43 +615,48 @@ def click_shipping_next(driver):
     print("➡️ Clicking shipping NEXT")
 
     WebDriverWait(driver, 60).until(
-        lambda d: d.execute_script("""
+        lambda d: d.execute_script(
+            """
             try {
                 const q = require('Magento_Checkout/js/model/quote');
                 return q.shippingMethod() && q.shippingMethod().carrier_code;
             } catch(e) { return false; }
-        """)
+        """
+        )
     )
 
     WebDriverWait(driver, 60).until(
-        EC.invisibility_of_element_located(
-            (By.CSS_SELECTOR, ".loading-mask, .loader")
-        )
+        EC.invisibility_of_element_located((By.CSS_SELECTOR, ".loading-mask, .loader"))
     )
 
     btn = WebDriverWait(driver, 60).until(
         lambda d: d.find_element(
             By.CSS_SELECTOR,
-            "#shipping-method-buttons-container button.continue:not([disabled])"
+            "#shipping-method-buttons-container button.continue:not([disabled])",
         )
     )
 
-    driver.execute_script("""
+    driver.execute_script(
+        """
         arguments[0].scrollIntoView({block:'center'});
-    """, btn)
+    """,
+        btn,
+    )
 
     time.sleep(1)
 
-    driver.execute_script("""
+    driver.execute_script(
+        """
         arguments[0].click();
-    """, btn)
+    """,
+        btn,
+    )
     WebDriverWait(driver, 60).until(
-        EC.presence_of_element_located(
-            (By.ID, "checkout-step-payment")
-        )
+        EC.presence_of_element_located((By.ID, "checkout-step-payment"))
     )
 
     print("✅ Payment step opened")
+
 
 def force_totals(driver):
     driver.execute_script(
@@ -694,54 +698,76 @@ def click_place_order(driver):
     print("🚀 Finalizing order placement")
 
     for i in range(5):
-        print(f"🔄 Attempting to click 'Plaats bestelling' ({i+1}/5)")
+        print(f"🔄 Attempt {i+1}/5")
 
         handle_save_address_popup(driver)
         wait_loader(driver)
+        accept_terms(driver)
 
-        driver.execute_script(
-            """
-            document.querySelectorAll('input[type="checkbox"].required-entry, .checkout-agreement input[type="checkbox"]')
-                .forEach(cb => { if(!cb.checked) cb.click(); });
-        """
+        # 🔥 Wait for Magento to actually allow submit
+        WebDriverWait(driver, 40).until(
+            lambda d: d.execute_script(
+                """
+                try {
+                    const quote = require('Magento_Checkout/js/model/quote');
+                    return quote.paymentMethod() &&
+                           quote.shippingMethod() &&
+                           !document.querySelector(
+                             'button.action.primary.checkout'
+                           )?.disabled;
+                } catch(e) { return false; }
+                """
+            )
         )
-        time.sleep(0.5)
 
         try:
-            btn = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable(
+            btn = WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located(
                     (By.CSS_SELECTOR, "button.action.primary.checkout")
                 )
             )
+
+            print(
+                "🧠 Disabled:",
+                btn.get_attribute("disabled"),
+                "Displayed:",
+                btn.is_displayed(),
+            )
+
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
-            time.sleep(1)
-            driver.execute_script("arguments[0].click();", btn)
-            print("✅ 'Plaats bestelling' clicked")
-        except:
-            print("⚠️ Button not clickable yet...")
+            time.sleep(0.5)
+
+            # KO-safe click
+            driver.execute_script(
+                """
+            require(['jquery'], function($){
+                $('.action.primary.checkout').trigger('click');
+            });
+            """
+            )
+
+            print("✅ Place Order triggered")
+
+        except Exception as e:
+            print("❌ Could not click:", e)
             continue
 
-        print("⏳ Verification...")
-        for _ in range(10):
+        # ---- VERIFY ----
+        for _ in range(20):
             time.sleep(1)
-            if (
-                "/success" in driver.current_url
-                or "success" in driver.current_url.lower()
-            ):
-                print("🎉 SUCCESS! Order placed.")
+            url = driver.current_url.lower()
+            if "success" in url:
+                print("🎉 ORDER SUCCESS!")
                 return True
 
-     
             errs = driver.find_elements(By.CSS_SELECTOR, ".message-error")
-            if errs and any(e.is_displayed() for e in errs):
-                print(f"❌ Magento Error: {errs[0].text}")
-              
-                if "betaalmethode" in errs[0].text.lower():
-                    select_bank_transfer(driver)
-                break
+            for err in errs:
+                if err.is_displayed():
+                    print("❌ Magento Error:", err.text)
+                    return False
 
-    print("🏁 Finished placement attempts.")
-    return True
+    print("🏁 Place order failed after retries.")
+    return False
 
 
 def fill_address_modal(driver, data):
@@ -813,80 +839,231 @@ def set_field_js(driver, el, value):
         value,
     )
 
+
 # =====================================================
 # MAIN FLOW
 # =====================================================
 def place_order(driver, order_id):
-    wait = WebDriverWait(driver, 60)
-    data = fetch_order_data(order_id)
-    driver.get("https://www.cchobby.nl/")
-    time.sleep(3)
-    close_popups(driver)
-
-    clear_cart(driver)  
-
-    search = driver.find_element(By.NAME, "q")
-    search.send_keys(data["sku"])
-    search.submit()
-    time.sleep(3)
-
-    js_click(
-        driver,
-        wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".product-item-link"))),
-    )
-    wait_loader(driver)
-
     try:
-        qty = driver.find_element(By.NAME, "qty")
-        qty.clear()
-        qty.send_keys(str(data["qty"]))
-    except:
-        pass
+        wait = WebDriverWait(driver, 60)
+        data = fetch_order_data(order_id)
 
-    js_click(
-        driver,
-        wait.until(EC.element_to_be_clickable((By.ID, "product-addtocart-button"))),
-    )
-    time.sleep(2)
+        driver.get("https://www.cchobby.nl/")
+        time.sleep(3)
+        close_popups(driver)
 
-    driver.get("https://www.cchobby.nl/checkout/")
-    wait.until(EC.url_contains("/checkout"))
-    wait_loader(driver)
-    ensure_address_modal_open(driver)
-    fill_address_modal(driver, data)
-    click_ship_here(driver)
-    real_mouse_scroll(driver, 900)
-    select_shipping(driver, data)
-    click_shipping_next(driver)
-    # wait_shipping_confirmed(driver)
-    handle_save_address_popup(driver)
-    force_totals_recalculation(driver)
-    real_mouse_scroll(driver, 600)
-    confirm_shipping_js(driver)
-    handle_save_address_popup(driver)
-    unlock_and_scroll_to_payment(driver)
-    human_scroll_to_payment(driver)
-    wait_payment_ready(driver)
+        clear_cart(driver)
 
-    try:
-        select_bank_transfer(driver)
-    except:
-        force_banktransfer_js(driver)
-    WebDriverWait(driver, 30).until(
-        lambda d: d.execute_script(
+        driver.get("https://www.cchobby.nl/")
+        wait_loader(driver)
+
+        print("📍 After home redirect:", driver.current_url)
+
+        # if already redirected somewhere else, don't wait for search box
+        if (
+            "catalogsearch" not in driver.current_url.lower()
+            and "/product" not in driver.current_url.lower()
+        ):
+
+            close_popups(driver)
+
+            WebDriverWait(driver, 40).until(
+                lambda d: d.execute_script(
+                    """
+                    return document.querySelectorAll('input[name="q"]').length > 0;
+                """
+                )
+            )
+        # --------------------------------------------------
+        # SEARCH PRODUCT
+        # --------------------------------------------------
+
+        driver.execute_script(
             """
-            try {
-                return require('Magento_Checkout/js/model/quote')
-                    .paymentMethod()?.method === 'banktransfer';
-            } catch(e) { return false; }
+        document.querySelectorAll(
+            '.loading-mask,.block-minicart,.modals-overlay'
+        ).forEach(e=>e.remove());
+        document.body.style.overflow='auto';
         """
         )
-    )
-    wait_payment_ready(driver)
-    force_totals(driver)
-    wait_loader(driver)
-    accept_terms(driver)
-    click_place_order(driver)
 
-    print("🏁 Finished placement attempts.")
-    return False
+        inputs = driver.find_elements(By.NAME, "q")
+        search = next(i for i in inputs if i.is_displayed())
+        print("📍 search product:", driver.current_url)
+        driver.execute_script(
+            """
+        arguments[0].scrollIntoView({block:'center'});
+        arguments[0].focus();
+        arguments[0].value='';
+        """,
+            search,
+        )
+        print("📍 search product 1:", driver.current_url)
+
+        for ch in data["sku"]:
+            search.send_keys(ch)
+            time.sleep(0.12)
+
+        search.send_keys(Keys.ENTER)
+
+        WebDriverWait(driver, 40).until(
+            lambda d: d.execute_script(
+                """
+                return document.querySelectorAll('.product-item-link').length > 0
+                    || window.location.href.includes('catalogsearch')
+                    || document.title.toLowerCase().includes('zoek');
+            """
+            )
+        )
+        print("➕ Adding product to cart")
+
+        add_btn = WebDriverWait(driver, 30).until(
+            EC.element_to_be_clickable(
+                (By.CSS_SELECTOR, "button.amquote-addto-button, button.tocart")
+            )
+        )
+
+        # update qty if exists
+        try:
+            qty_input = add_btn.find_element(
+                By.XPATH,
+                "./ancestor::*[contains(@class,'product-item')]//input[contains(@class,'qty')]",
+            )
+            qty_input.clear()
+            qty_input.send_keys(str(data["qty"]))
+            print("🔢 Qty updated")
+        except:
+            pass
+
+        js_click(driver, add_btn)
+
+        wait_loader(driver)
+
+        # wait minicart update
+        WebDriverWait(driver, 40).until(
+            lambda d: d.execute_script(
+                """
+                const c = document.querySelector('.counter-number');
+                return c && parseInt(c.innerText || '0') > 0;
+            """
+            )
+        )
+
+        print("🛒 Cart updated")
+
+        driver.get("https://www.cchobby.nl/checkout/")
+        wait.until(EC.url_contains("/checkout"))
+        wait_loader(driver)
+
+        ensure_address_modal_open(driver)
+        fill_address_modal(driver, data)
+        click_ship_here(driver)
+        real_mouse_scroll(driver, 900)
+
+        select_shipping(driver, data)
+        click_shipping_next(driver)
+
+        handle_save_address_popup(driver)
+        force_totals_recalculation(driver)
+
+        real_mouse_scroll(driver, 600)
+        confirm_shipping_js(driver)
+
+        # handle_save_address_popup(driver)
+
+        unlock_and_scroll_to_payment(driver)
+        human_scroll_to_payment(driver)
+
+        wait_payment_ready(driver)
+
+        try:
+            select_bank_transfer(driver)
+            print("🛒 select_bank_transfer updated")
+        except:
+            force_banktransfer_js(driver)
+            print("🛒 select_bank_transfer updated")
+
+        WebDriverWait(driver, 30).until(
+            lambda d: d.execute_script(
+                """
+                try {
+                    return require('Magento_Checkout/js/model/quote')
+                        return window.checkoutConfig
+                        && require('Magento_Checkout/js/model/quote').paymentMethod()
+                        && require('Magento_Checkout/js/model/quote').paymentMethod().method === 'banktransfer';
+
+                } catch(e) { return false; }
+            """
+            )
+        )
+
+        wait_payment_ready(driver)
+        force_totals(driver)
+
+        wait_loader(driver)
+        accept_terms(driver)
+
+        driver.execute_script(
+            """
+        try {
+        const q=require('Magento_Checkout/js/model/quote');
+        console.log("PAYMENT:", q.paymentMethod());
+        console.log("SHIPPING:", q.shippingMethod());
+        console.log("TOTALS:", q.totals());
+        } catch(e){console.log(e);}
+        """
+        )
+
+        click_place_order(driver)
+
+        WebDriverWait(driver, 60).until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, ".checkout-success-container")
+            )
+        )
+
+        order_no = driver.execute_script(
+            """
+        const el = document.querySelector('.block.thank-you-note span');
+        return el ? el.innerText.trim() : null;
+        """
+        )
+
+        print("📡 Syncing order to backend...")
+        print("BACKEND_URL =", BACKEND_URL)
+        print("ORDER ID =", order_id)
+        print("ORDER NO =", order_no)
+
+        print("📡 Syncing order to backend...")
+        print("BACKEND_URL =", BACKEND_URL)
+        print("ORDER ID =", order_id)
+        print("ORDER NO =", order_no)
+
+        try:
+            res = requests.post(
+                f"{BACKEND_URL}/v1/order-sync/{order_id}",
+                json={"supplierOrderNumber": order_no, "status": "ORDERED_AT_SUPPLIER"},
+                headers={
+                    "Content-Type": "application/json",
+                },
+                timeout=15,
+            )
+
+            print("📡 SYNC STATUS:", res.status_code)
+            print("📡 SYNC BODY:", res.text)
+
+            res.raise_for_status()
+
+        except Exception as e:
+            print("❌ ORDER SYNC FAILED:", repr(e))
+
+        print("🎉 ORDER COMPLETED + SYNCED")
+        print("🏁 Finished placement attempts.")
+        return True
+
+    except Exception as e:
+        import traceback
+
+        print("MAIN ERROR:", repr(e))
+        traceback.print_exc()
+        raise
