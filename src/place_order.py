@@ -8,6 +8,17 @@ from selenium.webdriver.common.keys import Keys
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3005")
 
+# YOUR FIXED BILLING ADDRESS
+BILLING_ADDRESS = {
+    "firstName": "Mohamed",
+    "lastName": "Guenoun",
+    "company": "Crea Place",
+    "street": "Postbus 3",
+    "zipcode": "2840 AA",
+    "city": "Moordrecht",
+    "country": "NL",
+    "phone": "0180-413131",
+}
 
 def fetch_order_data(order_id):
     res = requests.get(
@@ -31,7 +42,7 @@ def fetch_order_data(order_id):
 
     raw_phone = (raw.get("phone") or "").strip()
     digits = re.sub(r"[^\d]", "", raw_phone)
-    phone = digits if digits else ""
+    phone = digits if digits else "0100000000"
 
     return {
         "sku": order.get("product", {}).get("articleNo", ""),
@@ -697,77 +708,63 @@ def fill_input_by_label(modal, label_text, value):
 def click_place_order(driver):
     print("🚀 Finalizing order placement")
 
-    for i in range(5):
-        print(f"🔄 Attempt {i+1}/5")
+    handle_save_address_popup(driver)
+    wait_loader(driver)
+    accept_terms(driver)
 
-        handle_save_address_popup(driver)
-        wait_loader(driver)
-        accept_terms(driver)
-
-        # 🔥 Wait for Magento to actually allow submit
-        WebDriverWait(driver, 40).until(
-            lambda d: d.execute_script(
-                """
-                try {
-                    const quote = require('Magento_Checkout/js/model/quote');
-                    return quote.paymentMethod() &&
-                           quote.shippingMethod() &&
-                           !document.querySelector(
-                             'button.action.primary.checkout'
-                           )?.disabled;
-                } catch(e) { return false; }
-                """
-            )
-        )
-
-        try:
-            btn = WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "button.action.primary.checkout")
-                )
-            )
-
-            print(
-                "🧠 Disabled:",
-                btn.get_attribute("disabled"),
-                "Displayed:",
-                btn.is_displayed(),
-            )
-
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
-            time.sleep(0.5)
-
-            # KO-safe click
-            driver.execute_script(
-                """
-            require(['jquery'], function($){
-                $('.action.primary.checkout').trigger('click');
-            });
+    # wait Magento state ready
+    WebDriverWait(driver, 40).until(
+        lambda d: d.execute_script(
             """
-            )
+            try {
+                const q = require('Magento_Checkout/js/model/quote');
+                return q.paymentMethod() &&
+                       q.shippingMethod() &&
+                       document.querySelector('button.action.primary.checkout') &&
+                       !document.querySelector('button.action.primary.checkout').disabled;
+            } catch(e) { return false; }
+        """
+        )
+    )
 
-            print("✅ Place Order triggered")
+    already_clicked = driver.execute_script(
+        """
+        if (window.__orderSubmitLock) { return true; }
+        window.__orderSubmitLock = true;
+        return false;
+    """
+    )
+    if already_clicked:
+        print("🛑 Duplicate submission blocked: place order already triggered")
+        raise Exception("Order submission already triggered; refusing to click again")
 
-        except Exception as e:
-            print("❌ Could not click:", e)
-            continue
+    btn = driver.find_element(By.CSS_SELECTOR, "button.action.primary.checkout")
 
-        # ---- VERIFY ----
-        for _ in range(20):
-            time.sleep(1)
-            url = driver.current_url.lower()
-            if "success" in url:
-                print("🎉 ORDER SUCCESS!")
-                return True
+    print("🖱️ Clicking PLACE ORDER once")
 
-            errs = driver.find_elements(By.CSS_SELECTOR, ".message-error")
-            for err in errs:
-                if err.is_displayed():
-                    print("❌ Magento Error:", err.text)
-                    return False
+    driver.execute_script(
+        """
+        arguments[0].scrollIntoView({block:'center'});
+        arguments[0].click();
+        arguments[0].disabled = true;
+        arguments[0].style.pointerEvents = 'none';
+    """,
+        btn,
+    )
 
-    print("🏁 Place order failed after retries.")
-    return False
+    # 🔒 wait until redirect or disabled
+    WebDriverWait(driver, 120).until(
+        lambda d: "success" in d.current_url.lower()
+        or d.execute_script(
+            """
+                const b=document.querySelector('button.action.primary.checkout');
+                return b && b.disabled;
+            """
+        )
+    )
+
+    print("🎉 Order submitted")
+    return True
 
 
 def fill_address_modal(driver, data):
@@ -838,6 +835,227 @@ def set_field_js(driver, el, value):
         el,
         value,
     )
+
+
+def set_billing_address(driver):
+    print("💼 Setting billing address to company address...")
+
+    # Ensure billing is NOT same as shipping
+    driver.execute_script(
+        """
+        const checkbox = document.querySelector('input[name="billing-address-same-as-shipping"]');
+        if (checkbox && checkbox.checked) {
+            checkbox.click();
+        }
+    """
+    )
+
+    time.sleep(2)
+    wait_loader(driver)
+
+    # Try to locate the billing form inside the active payment method
+    container = WebDriverWait(driver, 30).until(
+        lambda d: d.find_element(
+            By.CSS_SELECTOR,
+            ".payment-method._active .billing-address-form, "
+            ".payment-method._active div[name='billingAddress'], "
+            ".payment-method._active .payment-method-billing-address, "
+            ".billing-address-form, div[name='billingAddress']",
+        )
+    )
+
+    # If Magento shows a billing address dropdown, pick the company address
+    try:
+        select_el = container.find_element(By.CSS_SELECTOR, "select[name='billing_address_id']")
+        target_text = (
+            f"{BILLING_ADDRESS['firstName']} {BILLING_ADDRESS['lastName']}, "
+            f"{BILLING_ADDRESS['street']}, {BILLING_ADDRESS['city']}, "
+            f"{BILLING_ADDRESS['zipcode']}"
+        ).lower()
+        matched = None
+        for opt in select_el.find_elements(By.TAG_NAME, "option"):
+            txt = (opt.text or "").lower()
+            if target_text and target_text in txt:
+                matched = opt.text
+                break
+            if BILLING_ADDRESS["lastName"].lower() in txt and BILLING_ADDRESS["city"].lower() in txt:
+                matched = opt.text
+                break
+        if matched:
+            Select(select_el).select_by_visible_text(matched)
+            driver.execute_script(
+                "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));",
+                select_el,
+            )
+            time.sleep(1)
+    except:
+        pass
+
+    # If Magento shows address selector cards, choose the company billing address
+    driver.execute_script(
+        """
+        const root = arguments[0];
+        const showAll = root.querySelector('button, a');
+        if (showAll && /show all|toon alle|alle adressen/i.test(showAll.innerText || '')) {
+            showAll.click();
+        }
+    """,
+        container,
+    )
+    time.sleep(1)
+
+    driver.execute_script(
+        """
+        const root = arguments[0];
+        const target = arguments[1].toLowerCase();
+        const cards = Array.from(root.querySelectorAll('.address-item, .billing-address-details, .shipping-address-item, .address-card, li'));
+        for (const c of cards) {
+            const t = (c.innerText || '').toLowerCase();
+            if (t.includes(target)) {
+                c.click();
+                return true;
+            }
+        }
+        return false;
+    """,
+        container,
+        f"{BILLING_ADDRESS['firstName']} {BILLING_ADDRESS['lastName']} {BILLING_ADDRESS['street']} {BILLING_ADDRESS['zipcode']} {BILLING_ADDRESS['city']}",
+    )
+    time.sleep(1)
+
+    def find_in_billing(selectors):
+        for selector in selectors:
+            try:
+                el = container.find_element(By.CSS_SELECTOR, selector)
+                if el.is_displayed():
+                    return el
+            except:
+                pass
+        return None
+
+    print("📝 Filling billing address form fields...")
+
+    fields = {
+        "firstname": ["input[name='firstname']", "input[name*='firstname']"],
+        "lastname": ["input[name='lastname']", "input[name*='lastname']"],
+        "company": ["input[name='company']", "input[name*='company']"],
+        "street": ["input[name='street[0]']", "input[name*='street[0]']"],
+        "postcode": ["input[name='postcode']", "input[name*='postcode']"],
+        "city": ["input[name='city']", "input[name*='city']"],
+        "telephone": ["input[name='telephone']", "input[name*='telephone']"],
+    }
+
+    mapping = {
+        "firstname": BILLING_ADDRESS["firstName"],
+        "lastname": BILLING_ADDRESS["lastName"],
+        "company": BILLING_ADDRESS["company"],
+        "street": BILLING_ADDRESS["street"],
+        "postcode": BILLING_ADDRESS["zipcode"],
+        "city": BILLING_ADDRESS["city"],
+        "telephone": BILLING_ADDRESS["phone"],
+    }
+
+    for key, selectors in fields.items():
+        el = find_in_billing(selectors)
+        if el:
+            set_field_js(driver, el, mapping[key])
+
+    country_el = find_in_billing(["select[name='country_id']", "select[name*='country_id']"])
+    if country_el:
+        Select(country_el).select_by_value(BILLING_ADDRESS["country"])
+
+    # Click "Bijwerken/Update" if Magento requires explicit save
+    try:
+        update_btn = container.find_element(
+            By.XPATH,
+            ".//following::div[contains(@class,'actions-toolbar')]//button[contains(@class,'action-update') or contains(.,'Bijwerken') or contains(.,'Update') or contains(.,'Opslaan')]",
+        )
+        if update_btn.is_displayed():
+            driver.execute_script("arguments[0].click();", update_btn)
+            time.sleep(2)
+            wait_loader(driver)
+    except:
+        pass
+
+    # Update quote model as extra safety
+    driver.execute_script(
+        """
+        try {
+            const quote = require('Magento_Checkout/js/model/quote');
+            quote.billingAddress({
+                firstname: arguments[0],
+                lastname: arguments[1],
+                company: arguments[2],
+                street: [arguments[3]],
+                postcode: arguments[4],
+                city: arguments[5],
+                country_id: arguments[6],
+                telephone: arguments[7]
+            });
+            console.log('Billing address set');
+        } catch(e) {
+            console.log('Billing address error:', e);
+        }
+    """,
+        BILLING_ADDRESS["firstName"],
+        BILLING_ADDRESS["lastName"],
+        BILLING_ADDRESS["company"],
+        BILLING_ADDRESS["street"],
+        BILLING_ADDRESS["zipcode"],
+        BILLING_ADDRESS["city"],
+        BILLING_ADDRESS["country"],
+        BILLING_ADDRESS["phone"],
+    )
+
+    time.sleep(2)
+    print("✅ Billing address set")
+
+
+def wait_place_order_enabled(driver, timeout=60):
+    print("⏳ Waiting for Place Order to enable...")
+    try:
+        WebDriverWait(driver, timeout).until(
+            lambda d: d.execute_script(
+                """
+                const btn = document.querySelector('button.action.primary.checkout');
+                return btn && !btn.disabled;
+            """
+            )
+        )
+        print("✅ Place Order enabled")
+        return True
+    except:
+        # Diagnostics
+        state = driver.execute_script(
+            """
+            const btn = document.querySelector('button.action.primary.checkout');
+            const agreements = Array.from(
+              document.querySelectorAll('.checkout-agreement input[type=checkbox]')
+            );
+            let agreementsUnchecked = agreements.filter(cb => !cb.checked).length;
+            let payment = null;
+            let shipping = null;
+            let totals = null;
+            let billing = null;
+            try {
+              const q = require('Magento_Checkout/js/model/quote');
+              payment = q.paymentMethod();
+              shipping = q.shippingMethod();
+              totals = q.totals();
+              billing = q.billingAddress();
+            } catch(e) {}
+            return {
+              btnDisabled: btn ? btn.disabled : null,
+              agreementsUnchecked,
+              payment,
+              shipping,
+              totals,
+              billing
+            };
+            """
+        )
+        print("❌ Place Order still disabled. Debug state:", state)
+        return False
 
 
 # =====================================================
@@ -998,10 +1216,12 @@ def place_order(driver, order_id):
         )
 
         wait_payment_ready(driver)
+        set_billing_address(driver)
         force_totals(driver)
 
         wait_loader(driver)
         accept_terms(driver)
+        wait_place_order_enabled(driver)
 
         driver.execute_script(
             """
@@ -1041,7 +1261,7 @@ def place_order(driver, order_id):
 
         try:
             res = requests.post(
-                f"{BACKEND_URL}/v1/order-sync/{order_id}",
+                f"{BACKEND_URL}/v1/order-history/order-sync/{order_id}",
                 json={"supplierOrderNumber": order_no, "status": "ORDERED_AT_SUPPLIER"},
                 headers={
                     "Content-Type": "application/json",
