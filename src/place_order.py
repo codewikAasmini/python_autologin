@@ -6,7 +6,8 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.actions.wheel_input import ScrollOrigin
 from selenium.webdriver.common.keys import Keys
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3005")
+# BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3005")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://31.97.78.137:3005")
 
 # YOUR FIXED BILLING ADDRESS
 BILLING_ADDRESS = {
