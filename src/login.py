@@ -32,18 +32,8 @@ def login():
         command_executor="http://localhost:4444/wd/hub",
         options=options,
     )
-
+    # driver = webdriver.Chrome(service=service, options=options)
     wait = WebDriverWait(driver, 30)
-
-    driver.get(LOGIN_URL)
-    print("CHROME EXISTS:", os.path.exists("/usr/bin/google-chrome"))
-    print("CHROME STABLE EXISTS:", os.path.exists("/usr/bin/google-chrome-stable"))
-    print("CHROMEDRIVER EXISTS:", os.path.exists("/usr/bin/chromedriver"))
-
-    subprocess.run(
-        ["/usr/bin/google-chrome", "--version"],
-        check=True,
-    )
 
     driver.get(LOGIN_URL)
     try:
