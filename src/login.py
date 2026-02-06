@@ -10,7 +10,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 import os
 import subprocess
-
+raise Exception("🔥 DEBUG: THIS IS UPDATED LOGIN.PY")
 load_dotenv()
 
 LOGIN_URL = os.getenv("SUPPLIER_LOGIN_URL")
