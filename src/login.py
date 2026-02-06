@@ -8,6 +8,8 @@ from selenium.common.exceptions import TimeoutException
 from dotenv import load_dotenv
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+import os
+import subprocess
 
 load_dotenv()
 
@@ -37,6 +39,16 @@ def login():
     driver = webdriver.Chrome(service=service, options=options)
 
     wait = WebDriverWait(driver, 30)
+
+
+    print("CHROME EXISTS:", os.path.exists("/usr/bin/google-chrome"))
+    print("CHROME STABLE EXISTS:", os.path.exists("/usr/bin/google-chrome-stable"))
+    print("CHROMEDRIVER EXISTS:", os.path.exists("/usr/bin/chromedriver"))
+
+    subprocess.run(
+        ["/usr/bin/google-chrome", "--version"],
+        check=True,
+    )
 
     driver.get(LOGIN_URL)
     try:
