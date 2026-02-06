@@ -20,26 +20,27 @@ def login():
     # options.add_argument("--start-maximized")
     # options.add_argument("--disable-blink-features=AutomationControlled")
 
-    # driver = webdriver.Chrome(options=options)
+    chrome_path = "/usr/bin/google-chrome"
+
+    os.environ["CHROME_BIN"] = chrome_path
+    os.environ["GOOGLE_CHROME_BIN"] = chrome_path
+
     options = Options()
+    options.binary_location = chrome_path
 
-    # Force chrome binary
-    options.binary_location = "/usr/bin/google-chrome"
-
-    # Server-safe flags
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
+    options.add_argument("--remote-debugging-port=9222")
 
-    options.add_argument("--disable-blink-features=AutomationControlled")
+    service = Service(executable_path="/usr/bin/chromedriver")
 
-    service = Service("/usr/bin/chromedriver")
+    print("🔥 USING CHROME:", chrome_path)
 
     driver = webdriver.Chrome(service=service, options=options)
 
     wait = WebDriverWait(driver, 30)
-
     print("CHROME EXISTS:", os.path.exists("/usr/bin/google-chrome"))
     print("CHROME STABLE EXISTS:", os.path.exists("/usr/bin/google-chrome-stable"))
     print("CHROMEDRIVER EXISTS:", os.path.exists("/usr/bin/chromedriver"))
