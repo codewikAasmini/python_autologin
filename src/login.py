@@ -6,31 +6,15 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from dotenv import load_dotenv
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 
 load_dotenv()
 
 LOGIN_URL = os.getenv("SUPPLIER_LOGIN_URL")
 
 def login():
-    options = Options()
-
-    # FORCE chrome binary
-    options.binary_location = "/usr/bin/google-chrome-stable"
-
-    # Server-safe flags
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-
-    # Optional stealth-ish
+    options = webdriver.ChromeOptions()
+    options.add_argument("--start-maximized")
     options.add_argument("--disable-blink-features=AutomationControlled")
-
-    service = Service("/usr/bin/chromedriver")
-
-    driver = webdriver.Chrome(service=service, options=options)
 
     driver = webdriver.Chrome(options=options)
     wait = WebDriverWait(driver, 30)
