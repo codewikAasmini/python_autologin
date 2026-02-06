@@ -10,7 +10,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 import os
 import subprocess
-raise Exception("🔥 DEBUG: THIS IS UPDATED LOGIN.PY")
+
 load_dotenv()
 
 LOGIN_URL = os.getenv("SUPPLIER_LOGIN_URL")
@@ -39,7 +39,6 @@ def login():
     driver = webdriver.Chrome(service=service, options=options)
 
     wait = WebDriverWait(driver, 30)
-
 
     print("CHROME EXISTS:", os.path.exists("/usr/bin/google-chrome"))
     print("CHROME STABLE EXISTS:", os.path.exists("/usr/bin/google-chrome-stable"))
