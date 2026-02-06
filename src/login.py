@@ -8,22 +8,13 @@ from selenium.common.exceptions import TimeoutException
 from dotenv import load_dotenv
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.remote.webdriver import WebDriver
 import os
 import subprocess
 
-print("🔥 STAT:", os.stat("/usr/bin/google-chrome"))
 load_dotenv()
 
 LOGIN_URL = os.getenv("SUPPLIER_LOGIN_URL")
-
-try:
-    out = subprocess.check_output(
-        ["/usr/bin/google-chrome", "--headless", "--no-sandbox", "--version"],
-        stderr=subprocess.STDOUT,
-    )
-    print("🔥 SUBPROCESS OK:", out.decode())
-except Exception as e:
-    print("🔥 SUBPROCESS FAIL:", repr(e))
 
 
 def login():
@@ -31,26 +22,20 @@ def login():
     # options.add_argument("--start-maximized")
     # options.add_argument("--disable-blink-features=AutomationControlled")
 
-    chrome_path = "/usr/bin/google-chrome"
-
     options = Options()
-    options.binary_location = chrome_path
-    options.add_argument("--disable-setuid-sandbox")
     options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--remote-debugging-port=9222")
-
     options.add_argument("--disable-blink-features=AutomationControlled")
 
-    service = Service("/usr/bin/chromedriver")
-
-    print("🔥 USING CHROME:", chrome_path)
-
-    driver = webdriver.Chrome(service=service, options=options)
+    driver = webdriver.Remote(
+        command_executor="http://localhost:4444/wd/hub",
+        options=options,
+    )
 
     wait = WebDriverWait(driver, 30)
+
+    driver.get(LOGIN_URL)
     print("CHROME EXISTS:", os.path.exists("/usr/bin/google-chrome"))
     print("CHROME STABLE EXISTS:", os.path.exists("/usr/bin/google-chrome-stable"))
     print("CHROMEDRIVER EXISTS:", os.path.exists("/usr/bin/chromedriver"))
