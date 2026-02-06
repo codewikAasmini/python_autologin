@@ -10,6 +10,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 import os
 import subprocess
+
 print("🔥 STAT:", os.stat("/usr/bin/google-chrome"))
 load_dotenv()
 
@@ -24,15 +25,13 @@ try:
 except Exception as e:
     print("🔥 SUBPROCESS FAIL:", repr(e))
 
+
 def login():
     # options = webdriver.ChromeOptions()
     # options.add_argument("--start-maximized")
     # options.add_argument("--disable-blink-features=AutomationControlled")
 
-    chrome_path = "/snap/bin/chromium"
-
-    os.environ["CHROME_BIN"] = chrome_path
-    os.environ["GOOGLE_CHROME_BIN"] = chrome_path
+    chrome_path = "/usr/bin/google-chrome"
 
     options = Options()
     options.binary_location = chrome_path
@@ -43,7 +42,9 @@ def login():
     options.add_argument("--disable-gpu")
     options.add_argument("--remote-debugging-port=9222")
 
-    service = Service("/snap/bin/chromium.chromedriver")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+
+    service = Service("/usr/bin/chromedriver")
 
     print("🔥 USING CHROME:", chrome_path)
 
@@ -62,13 +63,20 @@ def login():
     driver.get(LOGIN_URL)
     try:
 
-        cookie = wait.until(EC.element_to_be_clickable((
-            By.XPATH, "//button[contains(.,'OK') or contains(.,'Alleen') or contains(@class, 'coi-banner__accept')]"
-        )))
+        cookie = wait.until(
+            EC.element_to_be_clickable(
+                (
+                    By.XPATH,
+                    "//button[contains(.,'OK') or contains(.,'Alleen') or contains(@class, 'coi-banner__accept')]",
+                )
+            )
+        )
         driver.execute_script("arguments[0].click();", cookie)
         time.sleep(1)
-    
-        popups = driver.find_elements(By.XPATH, "//button[contains(@class, 'klaviyo-close-form')]")
+
+        popups = driver.find_elements(
+            By.XPATH, "//button[contains(@class, 'klaviyo-close-form')]"
+        )
         for p in popups:
             if p.is_displayed():
                 driver.execute_script("arguments[0].click();", p)
@@ -81,6 +89,7 @@ def login():
     if not email_val or not password_val:
         raise Exception("SUPPLIER_EMAIL / SUPPLIER_PASSWORD missing")
     print("Waiting for email field...")
+
     def find_visible_element(xpath):
         elements = driver.find_elements(By.XPATH, xpath)
         for el in elements:
@@ -88,29 +97,46 @@ def login():
                 return el
         return None
 
-    wait.until(lambda d: find_visible_element("//input[@id='email' or @id='customer-email']") is not None)
+    wait.until(
+        lambda d: find_visible_element("//input[@id='email' or @id='customer-email']")
+        is not None
+    )
     email_el = find_visible_element("//input[@id='email' or @id='customer-email']")
-    
+
     print("Email field found.")
     driver.execute_script("arguments[0].scrollIntoView(true);", email_el)
     time.sleep(1)
     email_el.clear()
     email_el.send_keys(email_val)
     print("Waiting for password field...")
-    wait.until(lambda d: find_visible_element("//input[@id='password' or @id='pass']") is not None)
+    wait.until(
+        lambda d: find_visible_element("//input[@id='password' or @id='pass']")
+        is not None
+    )
     pwd = find_visible_element("//input[@id='password' or @id='pass']")
     print("Password field found.")
-    driver.execute_script("""
+    driver.execute_script(
+        """
         arguments[0].focus();
         arguments[0].value = arguments[1];
         arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
         arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-    """, pwd, password_val)
+    """,
+        pwd,
+        password_val,
+    )
 
     time.sleep(1)
     print("Waiting for login button...")
-    wait.until(lambda d: find_visible_element("//button[@id='send2' and contains(@class, 'primary')]") is not None)
-    login_btn = find_visible_element("//button[@id='send2' and contains(@class, 'primary')]")
+    wait.until(
+        lambda d: find_visible_element(
+            "//button[@id='send2' and contains(@class, 'primary')]"
+        )
+        is not None
+    )
+    login_btn = find_visible_element(
+        "//button[@id='send2' and contains(@class, 'primary')]"
+    )
     print("Login button found.")
     driver.execute_script("arguments[0].click();", login_btn)
     try:
@@ -119,11 +145,14 @@ def login():
     except TimeoutException:
         print("LOGIN TIMEOUT - might have failed or stayed on the same page")
         if "login" in driver.current_url:
-     
-             try:
-                 error = driver.find_element(By.XPATH, "//div[@data-bind='html: $parent.prepareMessageForHtml(message.text)']")
-                 print(f"Login error: {error.text}")
-             except:
-                 pass
-    
+
+            try:
+                error = driver.find_element(
+                    By.XPATH,
+                    "//div[@data-bind='html: $parent.prepareMessageForHtml(message.text)']",
+                )
+                print(f"Login error: {error.text}")
+            except:
+                pass
+
     return driver
