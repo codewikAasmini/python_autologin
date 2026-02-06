@@ -10,17 +10,26 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 import os
 import subprocess
-
+print("🔥 STAT:", os.stat("/usr/bin/google-chrome"))
 load_dotenv()
 
 LOGIN_URL = os.getenv("SUPPLIER_LOGIN_URL")
+
+try:
+    out = subprocess.check_output(
+        ["/usr/bin/google-chrome", "--headless", "--no-sandbox", "--version"],
+        stderr=subprocess.STDOUT,
+    )
+    print("🔥 SUBPROCESS OK:", out.decode())
+except Exception as e:
+    print("🔥 SUBPROCESS FAIL:", repr(e))
 
 def login():
     # options = webdriver.ChromeOptions()
     # options.add_argument("--start-maximized")
     # options.add_argument("--disable-blink-features=AutomationControlled")
 
-    chrome_path = "/usr/bin/google-chrome"
+    chrome_path = "/snap/bin/chromium"
 
     os.environ["CHROME_BIN"] = chrome_path
     os.environ["GOOGLE_CHROME_BIN"] = chrome_path
@@ -34,7 +43,7 @@ def login():
     options.add_argument("--disable-gpu")
     options.add_argument("--remote-debugging-port=9222")
 
-    service = Service(executable_path="/usr/bin/chromedriver")
+    service = Service("/snap/bin/chromium.chromedriver")
 
     print("🔥 USING CHROME:", chrome_path)
 
