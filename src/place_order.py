@@ -1235,6 +1235,7 @@ def place_order(driver, order_id):
         """
         )
 
+
         click_place_order(driver)
 
         WebDriverWait(driver, 60).until(
