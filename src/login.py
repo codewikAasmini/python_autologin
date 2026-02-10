@@ -18,24 +18,22 @@ LOGIN_URL = os.getenv("SUPPLIER_LOGIN_URL")
 
 
 def login():
-    options = webdriver.ChromeOptions()
-    options.add_argument("--start-maximized")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-
-    # options = Options()
-    # options.add_argument("--headless=new")
-    # options.add_argument("--disable-dev-shm-usage")
-    # options.add_argument("--disable-gpu")
+    # options = webdriver.ChromeOptions()
+    # options.add_argument("--start-maximized")
     # options.add_argument("--disable-blink-features=AutomationControlled")
 
-    # driver = webdriver.Remote(
-    #     command_executor="http://localhost:4444/wd/hub",
-    #     options=options,
-    # )
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-blink-features=AutomationControlled")
 
-    # driver = webdriver.Chrome(service=service, options=options)            
+    driver = webdriver.Remote(
+        command_executor="http://localhost:4444/wd/hub",
+        options=options,
+    )
 
-    driver = webdriver.Chrome(options=options)
+    #driver = webdriver.Chrome(options=options)
     wait = WebDriverWait(driver, 30)
 
     driver.get(LOGIN_URL)
