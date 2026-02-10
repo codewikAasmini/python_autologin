@@ -1226,7 +1226,7 @@ def place_order(driver, order_id):
         )
 
 
-        #click_place_order(driver)
+        click_place_order(driver)
 
         WebDriverWait(driver, 60).until(
             EC.presence_of_element_located(
