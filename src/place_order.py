@@ -44,10 +44,16 @@ def fetch_order_data(order_id):
     raw_phone = (raw.get("phone") or "").strip()
     digits = re.sub(r"[^\d]", "", raw_phone)
     phone = digits if digits else "0100000000"
-
+    lines = order.get("products", [])
     return {
-        "sku": order.get("product", {}).get("articleNo", ""),
-        "qty": order.get("quantity") or 1,
+         "products": [
+            {
+                "sku": p.get("product", {}).get("articleNo", ""),
+                "qty": p.get("quantity") or 1,
+            }
+            for p in lines
+            if p.get("product")
+        ],
         "firstName": raw.get("firstname", ""),
         "lastName": raw.get("lastname", ""),
         "company": raw.get("companyName", ""),
@@ -1066,7 +1072,7 @@ def place_order(driver, order_id):
     try:
         wait = WebDriverWait(driver, 60)
         data = fetch_order_data(order_id)
-
+        print("📦 BACKEND PRODUCTS:", data["products"])
         driver.get("https://www.cchobby.nl/")
         time.sleep(3)
         close_popups(driver)
@@ -1096,67 +1102,51 @@ def place_order(driver, order_id):
         # --------------------------------------------------
         # SEARCH PRODUCT
         # --------------------------------------------------
+        for line in data["products"]:
 
-        driver.execute_script(
-            """
-        document.querySelectorAll(
-            '.loading-mask,.block-minicart,.modals-overlay'
-        ).forEach(e=>e.remove());
-        document.body.style.overflow='auto';
-        """
-        )
+            sku = line["sku"]
+            qty = line["qty"]
 
-        inputs = driver.find_elements(By.NAME, "q")
-        search = next(i for i in inputs if i.is_displayed())
-        print("📍 search product:", driver.current_url)
-        driver.execute_script(
-            """
-        arguments[0].scrollIntoView({block:'center'});
-        arguments[0].focus();
-        arguments[0].value='';
-        """,
-            search,
-        )
-        print("📍 search product 1:", driver.current_url)
+            print("🔎 Searching SKU:", sku)
 
-        for ch in data["sku"]:
-            search.send_keys(ch)
-            time.sleep(0.12)
+            inputs = driver.find_elements(By.NAME, "q")
+            search = next(i for i in inputs if i.is_displayed())
 
-        search.send_keys(Keys.ENTER)
+            search.clear()
+            for ch in sku:
+                search.send_keys(ch)
+                time.sleep(0.12)
 
-        WebDriverWait(driver, 40).until(
-            lambda d: d.execute_script(
-                """
-                return document.querySelectorAll('.product-item-link').length > 0
-                    || window.location.href.includes('catalogsearch')
-                    || document.title.toLowerCase().includes('zoek');
-            """
+            search.send_keys(Keys.ENTER)
+
+            WebDriverWait(driver, 40).until(
+                lambda d: d.execute_script(
+                    """
+                    return document.querySelectorAll('.product-item-link').length > 0
+                        || window.location.href.includes('catalogsearch');
+                    """
+                )
             )
-        )
-        print("➕ Adding product to cart")
 
-        add_btn = WebDriverWait(driver, 30).until(
-            EC.element_to_be_clickable(
-                (By.CSS_SELECTOR, "button.amquote-addto-button, button.tocart")
+            add_btn = WebDriverWait(driver, 30).until(
+                EC.element_to_be_clickable(
+                    (By.CSS_SELECTOR, "button.amquote-addto-button, button.tocart")
+                )
             )
-        )
 
-        # update qty if exists
-        try:
-            qty_input = add_btn.find_element(
-                By.XPATH,
-                "./ancestor::*[contains(@class,'product-item')]//input[contains(@class,'qty')]",
-            )
-            qty_input.clear()
-            qty_input.send_keys(str(data["qty"]))
-            print("🔢 Qty updated")
-        except:
-            pass
+            try:
+                qty_input = add_btn.find_element(
+                    By.XPATH,
+                    "./ancestor::*[contains(@class,'product-item')]//input[contains(@class,'qty')]",
+                )
+                qty_input.clear()
+                qty_input.send_keys(str(qty))
+            except:
+                pass
 
-        js_click(driver, add_btn)
+            js_click(driver, add_btn)
+            wait_loader(driver)
 
-        wait_loader(driver)
 
         # wait minicart update
         WebDriverWait(driver, 40).until(
@@ -1236,7 +1226,7 @@ def place_order(driver, order_id):
         )
 
 
-        click_place_order(driver)
+        #click_place_order(driver)
 
         WebDriverWait(driver, 60).until(
             EC.presence_of_element_located(
