@@ -46,7 +46,7 @@ def fetch_order_data(order_id):
     phone = digits if digits else "0100000000"
     lines = order.get("products", [])
     return {
-         "products": [
+        "products": [
             {
                 "sku": p.get("product", {}).get("articleNo", ""),
                 "qty": p.get("quantity") or 1,
@@ -873,7 +873,9 @@ def set_billing_address(driver):
 
     # If Magento shows a billing address dropdown, pick the company address
     try:
-        select_el = container.find_element(By.CSS_SELECTOR, "select[name='billing_address_id']")
+        select_el = container.find_element(
+            By.CSS_SELECTOR, "select[name='billing_address_id']"
+        )
         target_text = (
             f"{BILLING_ADDRESS['firstName']} {BILLING_ADDRESS['lastName']}, "
             f"{BILLING_ADDRESS['street']}, {BILLING_ADDRESS['city']}, "
@@ -885,7 +887,10 @@ def set_billing_address(driver):
             if target_text and target_text in txt:
                 matched = opt.text
                 break
-            if BILLING_ADDRESS["lastName"].lower() in txt and BILLING_ADDRESS["city"].lower() in txt:
+            if (
+                BILLING_ADDRESS["lastName"].lower() in txt
+                and BILLING_ADDRESS["city"].lower() in txt
+            ):
                 matched = opt.text
                 break
         if matched:
@@ -967,7 +972,9 @@ def set_billing_address(driver):
         if el:
             set_field_js(driver, el, mapping[key])
 
-    country_el = find_in_billing(["select[name='country_id']", "select[name*='country_id']"])
+    country_el = find_in_billing(
+        ["select[name='country_id']", "select[name*='country_id']"]
+    )
     if country_el:
         Select(country_el).select_by_value(BILLING_ADDRESS["country"])
 
@@ -1147,7 +1154,6 @@ def place_order(driver, order_id):
             js_click(driver, add_btn)
             wait_loader(driver)
 
-
         # wait minicart update
         WebDriverWait(driver, 40).until(
             lambda d: d.execute_script(
@@ -1224,7 +1230,6 @@ def place_order(driver, order_id):
         } catch(e){console.log(e);}
         """
         )
-
 
         click_place_order(driver)
 

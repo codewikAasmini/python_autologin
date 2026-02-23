@@ -21,6 +21,7 @@ def login():
     # options = webdriver.ChromeOptions()
     # options.add_argument("--start-maximized")
     # options.add_argument("--disable-blink-features=AutomationControlled")
+    # driver = webdriver.Chrome(options=options)
 
     options = Options()
     options.add_argument("--headless=new")
@@ -33,7 +34,6 @@ def login():
         options=options,
     )
 
-    #driver = webdriver.Chrome(options=options)
     wait = WebDriverWait(driver, 30)
 
     driver.get(LOGIN_URL)
