@@ -21,6 +21,7 @@ BILLING_ADDRESS = {
     "phone": "0180-413131",
 }
 
+
 def fetch_order_data(order_id):
     res = requests.get(
         f"{BACKEND_URL}/v1/order-history/internal/{order_id}", timeout=15
@@ -1276,7 +1277,7 @@ def place_order(driver, order_id):
 
         print("🎉 ORDER COMPLETED + SYNCED")
         print("🏁 Finished placement attempts.")
-        return True
+        return order_no
 
     except Exception as e:
         import traceback
