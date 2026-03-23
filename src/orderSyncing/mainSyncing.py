@@ -7,7 +7,7 @@ import json
 
 def main():
     if len(sys.argv) < 2:
-        print("ORDER_FAILED")
+        print("ORDER_Sync_FAILED")
         sys.exit(1)
 
     supplier_order_number = sys.argv[1]
@@ -39,7 +39,7 @@ def main():
 
     except Exception as e:
         print("MAIN ERROR:", e)
-        print("ORDER_FAILED")
+        print("ORDER_Sync_FAILED")
         sys.exit(1)
 
     finally:
