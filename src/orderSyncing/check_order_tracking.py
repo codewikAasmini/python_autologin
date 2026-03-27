@@ -1,26 +1,41 @@
 import urllib.parse
-import os , time, requests
-import json
+import os
+import time
+import requests
+
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 
 ORDER_HISTORY_URL = "https://www.cchobby.nl/sales/order/history/"
-
-# BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3005")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://31.97.78.137:3005")
 
 
+# ✅ Extract tracking ID from different URL formats
 def extract_tracking_id(href):
     try:
         parsed = urllib.parse.urlparse(href)
         query = urllib.parse.parse_qs(parsed.query)
-        return query.get("id", [None])[0]
-    except:
+
+        # Handle multiple possible query params
+        for key in ["id", "match", "tracking", "trackingNumber"]:
+            if key in query and query[key]:
+                return query[key][0]
+
+        # Fallback → last part of path
+        path_parts = parsed.path.split("/")
+        if path_parts and path_parts[-1]:
+            return path_parts[-1]
+
+        return None
+
+    except Exception as e:
+        print("❌ extract_tracking_id error:", e)
         return None
 
 
+# ✅ Main function
 def check_order_tracking(driver, supplier_order_number):
     wait = WebDriverWait(driver, 20)
 
@@ -32,13 +47,11 @@ def check_order_tracking(driver, supplier_order_number):
         EC.presence_of_all_elements_located((By.CSS_SELECTOR, "table tbody tr"))
     )
 
+    # 🔍 Find correct order
     for row in rows:
         try:
             order_cell = row.find_element(By.CSS_SELECTOR, "td.col.id")
             order_number = order_cell.text.strip()
-
-            # ❌ REMOVE noisy print OR keep as debug:
-            # print("Checking Ordernr:", order_number)
 
             if supplier_order_number == order_number:
                 view_btn = row.find_element(By.CSS_SELECTOR, "a.action.view")
@@ -56,65 +69,66 @@ def check_order_tracking(driver, supplier_order_number):
             "reason": "Order not found in table",
         }
 
+    # ⏳ Wait for tracking section
     wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".track-order")))
 
     try:
-        btn = wait.until(
-            EC.presence_of_element_located(
+        # ✅ Get ALL tracking buttons
+        buttons = wait.until(
+            EC.presence_of_all_elements_located(
                 (By.CSS_SELECTOR, ".track-order .track-button a")
             )
         )
 
-        if btn.get_attribute("disabled"):
+        tracking_ids = set()  # ✅ avoid duplicates
+
+        for btn in buttons:
+            href = btn.get_attribute("href")
+
+            if not href:
+                continue
+
+            print("🔗 Found URL:", href)
+
+            tracking_id = extract_tracking_id(href)
+
+            if tracking_id:
+                tracking_ids.add(tracking_id)
+
+        if not tracking_ids:
             return {
                 "supplierOrderNumber": supplier_order_number,
                 "trackingGenerated": False,
-                "reason": "Tracking button disabled",
+                "reason": "No tracking IDs found",
             }
 
-        href = btn.get_attribute("href")
+        # 🚀 Send each tracking ID separately
+        for tracking_id in tracking_ids:
+            try:
+                res = requests.post(
+                    f"{BACKEND_URL}/v1/order-history/save-tracking-id",
+                    json={
+                        "supplierOrderNumber": supplier_order_number,
+                        "trackingNumber": tracking_id,
+                    },
+                    headers={"Content-Type": "application/json"},
+                    timeout=15,
+                )
 
-        if not href:
-            return {
-                "supplierOrderNumber": supplier_order_number,
-                "trackingGenerated": False,
-                "reason": "No tracking link",
-            }
+                print(f"📦 Sent tracking: {tracking_id}")
+                print("📡 STATUS:", res.status_code)
+                print("📡 RESPONSE:", res.text)
 
-        tracking_id = extract_tracking_id(href)
+            except Exception as e:
+                print(f"❌ FAILED for {tracking_id}:", repr(e))
 
-        if not tracking_id:
-            return {
-                "supplierOrderNumber": supplier_order_number,
-                "trackingGenerated": False,
-                "reason": "Tracking ID not found",
-            }
-        try:
-            res = requests.post(
-                f"{BACKEND_URL}/v1/order-history/save-tracking-id",
-                json={
-                    "supplierOrderNumber": supplier_order_number,
-                    "trackingNumber": tracking_id,
-                },
-                headers={
-                    "Content-Type": "application/json",
-                },
-                timeout=15,
-            )
-
-            print("📡 SYNC STATUS:", res.status_code)
-            print("📡 SYNC BODY:", res.text)
-
-            res.raise_for_status()
-
-        except Exception as e:
-            print("❌ ORDER SYNC FAILED:", repr(e))
+            # ⚠️ prevent rate limit
+            time.sleep(0.5)
 
         return {
             "supplierOrderNumber": supplier_order_number,
             "trackingGenerated": True,
-            "trackingNumber": tracking_id,
-            "trackingUrl": f"/tracking?id={tracking_id}",
+            "trackingNumbers": list(tracking_ids),
         }
 
     except Exception as e:
