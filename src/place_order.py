@@ -5,6 +5,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.actions.wheel_input import ScrollOrigin
 from selenium.webdriver.common.keys import Keys
+from selenium.common.exceptions import StaleElementReferenceException
 
 # BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3005")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://31.97.78.137:3005")
@@ -80,10 +81,24 @@ def human_type(el, text, delay=0.12):
         time.sleep(delay)
 
 
-def js_click(driver, el):
-    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
-    time.sleep(0.3)
-    driver.execute_script("arguments[0].click();", el)
+def js_click_safe(driver, locator, timeout=30):
+    for _ in range(3):
+        try:
+            el = WebDriverWait(driver, timeout).until(
+                EC.element_to_be_clickable(locator)
+            )
+
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
+            time.sleep(0.3)
+
+            driver.execute_script("arguments[0].click();", el)
+            return
+
+        except StaleElementReferenceException:
+            print("♻️ Retrying stale element...")
+            time.sleep(1)
+
+    raise Exception("❌ Failed to click element due to stale reference")
 
 
 def wait_loader(driver, timeout=30):
@@ -240,7 +255,7 @@ def ensure_address_modal_open(driver):
 
 # =====================================================
 # SHIPPING (FIXED)
-# =====================================================
+# =====================================================z
 def select_shipping(driver, data):
     """
     EXACT shipping selection based on business rules
@@ -1127,32 +1142,61 @@ def place_order(driver, order_id):
 
             search.send_keys(Keys.ENTER)
 
+            # WebDriverWait(driver, 40).until(
+            #     lambda d: d.execute_script(
+            #         """
+            #         return document.querySelectorAll('.product-item-link').length > 0
+            #             || window.location.href.includes('catalogsearch');
+            #         """
+            #     )
+            # )
             WebDriverWait(driver, 40).until(
-                lambda d: d.execute_script(
-                    """
-                    return document.querySelectorAll('.product-item-link').length > 0
-                        || window.location.href.includes('catalogsearch');
-                    """
-                )
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".product-item"))
             )
 
-            add_btn = WebDriverWait(driver, 30).until(
-                EC.element_to_be_clickable(
-                    (By.CSS_SELECTOR, "button.amquote-addto-button, button.tocart")
-                )
+            # add_btn = WebDriverWait(driver, 30).until(
+            #     EC.element_to_be_clickable(
+            #         (By.CSS_SELECTOR, "button.amquote-addto-button, button.tocart")
+            #     )
+            # )
+
+            # try:
+            #     qty_input = add_btn.find_element(
+            #         By.XPATH,
+            #         "./ancestor::*[contains(@class,'product-item')]//input[contains(@class,'qty')]",
+            #     )
+            #     qty_input.clear()
+            #     qty_input.send_keys(str(qty))
+            # except:
+            #     pass
+
+            product = WebDriverWait(driver, 30).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".product-item"))
             )
 
             try:
-                qty_input = add_btn.find_element(
-                    By.XPATH,
-                    "./ancestor::*[contains(@class,'product-item')]//input[contains(@class,'qty')]",
+                qty_input = product.find_element(By.CSS_SELECTOR, "input.qty")
+
+                driver.execute_script(
+                    """
+                    arguments[0].scrollIntoView({block:'center'});
+                """,
+                    qty_input,
                 )
+
                 qty_input.clear()
                 qty_input.send_keys(str(qty))
-            except:
-                pass
 
-            js_click(driver, add_btn)
+                print(f"✅ Qty set to {qty}")
+
+            except:
+                print("⚠️ No qty input found → default qty = 1")
+
+            # js_click(driver, add_btn)
+            js_click_safe(
+                driver, (By.CSS_SELECTOR, "button.amquote-addto-button, button.tocart")
+            )
+
             wait_loader(driver)
 
         # wait minicart update
