@@ -49,10 +49,25 @@ def fetch_order_data(order_id):
     lines = order.get("products", [])
     return {
         "products": [
-            {
-                "sku": p.get("product", {}).get("articleNo", ""),
-                "qty": p.get("quantity") or 1,
-            }
+            (
+                lambda p: (
+                    print(
+                        "RAW QTY:",
+                        p.get("quantity"),
+                        "ORDERED:",
+                        p.get("quantityOrdered"),
+                    ),
+                    {
+                        "sku": p.get("product", {}).get("articleNo", ""),
+                        "qty": (
+                            lambda qty: (
+                                print("FINAL QTY:", qty),
+                                qty if qty > 0 else 1,
+                            )[1]
+                        )(int(p.get("quantity") or p.get("quantityOrdered") or 1)),
+                    },
+                )[1]
+            )(p)
             for p in lines
             if p.get("product")
         ],
@@ -1142,62 +1157,59 @@ def place_order(driver, order_id):
 
             search.send_keys(Keys.ENTER)
 
-            # WebDriverWait(driver, 40).until(
-            #     lambda d: d.execute_script(
-            #         """
-            #         return document.querySelectorAll('.product-item-link').length > 0
-            #             || window.location.href.includes('catalogsearch');
-            #         """
-            #     )
-            # )
             WebDriverWait(driver, 40).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, ".product-item"))
             )
 
-            # add_btn = WebDriverWait(driver, 30).until(
-            #     EC.element_to_be_clickable(
-            #         (By.CSS_SELECTOR, "button.amquote-addto-button, button.tocart")
-            #     )
-            # )
-
-            # try:
-            #     qty_input = add_btn.find_element(
-            #         By.XPATH,
-            #         "./ancestor::*[contains(@class,'product-item')]//input[contains(@class,'qty')]",
-            #     )
-            #     qty_input.clear()
-            #     qty_input.send_keys(str(qty))
-            # except:
-            #     pass
-
             product = WebDriverWait(driver, 30).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, ".product-item"))
             )
+        # ✅ Step 1: parse qty safely
+        try:
+            qty = int(qty)
+        except (TypeError, ValueError):
+            print("⚠️ Invalid qty, fallback to 1")
+            qty = 1
 
+        # ✅ Step 2: find correct form
+        form = WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "form[data-role='tocart-form']")
+            )
+        )
+
+        # ✅ Step 3: apply qty
+        if qty > 1:
             try:
-                qty_input = product.find_element(By.CSS_SELECTOR, "input.qty")
+                plus_btn = form.find_element(By.CSS_SELECTOR, ".qty-change.increase")
 
                 driver.execute_script(
-                    """
-                    arguments[0].scrollIntoView({block:'center'});
-                """,
-                    qty_input,
+                    "arguments[0].scrollIntoView({block:'center'});", plus_btn
                 )
+                time.sleep(0.5)
 
-                qty_input.clear()
-                qty_input.send_keys(str(qty))
+                for _ in range(qty - 1):
+                    driver.execute_script("arguments[0].click();", plus_btn)
+                    time.sleep(0.3)
 
-                print(f"✅ Qty set to {qty}")
+                print(f"✅ Qty set via + button: {qty}")
 
-            except:
-                print("⚠️ No qty input found → default qty = 1")
+            except Exception as e:
+                print("❌ Failed to click + button:", e)
+        else:
+            print("ℹ️ Qty is 1")
 
-            # js_click(driver, add_btn)
-            js_click_safe(
-                driver, (By.CSS_SELECTOR, "button.amquote-addto-button, button.tocart")
+        # ✅ Step 4: click add to cart
+        try:
+            add_btn = form.find_element(
+                By.CSS_SELECTOR, "button.tocart, button.amquote-addto-button"
             )
 
-            wait_loader(driver)
+            driver.execute_script("arguments[0].click();", add_btn)
+
+        except Exception as e:
+            print("❌ Failed to click add to cart:", e)
+        wait_loader(driver)
 
         # wait minicart update
         WebDriverWait(driver, 40).until(
