@@ -1295,10 +1295,11 @@ def place_order(driver, order_id):
 
         click_place_order(driver)
 
-        WebDriverWait(driver, 60).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, ".checkout-success-container")
-            )
+        WebDriverWait(driver, 120).until(
+        lambda d:
+            "success" in d.current_url.lower()
+            or d.find_elements(By.CSS_SELECTOR, ".checkout-success-container")
+            or d.find_elements(By.CSS_SELECTOR, ".checkout-onepage-success")
         )
 
         order_no = driver.execute_script(
