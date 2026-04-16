@@ -1141,29 +1141,34 @@ def place_order(driver, order_id):
         # SEARCH PRODUCT
         # --------------------------------------------------
         for line in data["products"]:
+            sku = str(line["sku"]).strip()
+            qty = int(line["qty"])
 
-            sku = line["sku"]
-            qty = line["qty"]
+            driver.get("https://www.cchobby.nl/")
+            wait_loader(driver)
 
-            print("🔎 Searching SKU:", sku)
-
-            inputs = driver.find_elements(By.NAME, "q")
-            search = next(i for i in inputs if i.is_displayed())
+            search = WebDriverWait(driver, 20).until(
+                EC.element_to_be_clickable((By.NAME, "q"))
+            )
 
             search.clear()
-            for ch in sku:
-                search.send_keys(ch)
-                time.sleep(0.12)
-
+            search.send_keys(sku)
+            time.sleep(1)
             search.send_keys(Keys.ENTER)
 
-            WebDriverWait(driver, 40).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, ".product-item"))
+            wait_loader(driver)
+
+            WebDriverWait(driver, 20).until(
+                lambda d: d.find_elements(By.CSS_SELECTOR, ".product-item")
             )
 
-            product = WebDriverWait(driver, 30).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, ".product-item"))
+            form = WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "form[data-role='tocart-form']")
+                )
             )
+
+        # qty + add to cart here INSIDE loop
         # ✅ Step 1: parse qty safely
         try:
             qty = int(qty)
