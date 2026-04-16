@@ -804,6 +804,12 @@ def click_place_order(driver):
     print("🎉 Order submitted")
     return True
 
+def clean_city(city):
+    city = city.split(",")[0]
+    city = re.sub(r"[^\w' -]", " ", city, flags=re.UNICODE)
+    city = re.sub(r"\s+", " ", city).strip()
+    return city
+
 
 def fill_address_modal(driver, data):
 
@@ -827,7 +833,7 @@ def fill_address_modal(driver, data):
 
     set_field_js(driver, by_name("street[0]"), data["street"])
     set_field_js(driver, by_name("postcode"), data["zipcode"])
-    set_field_js(driver, by_name("city"), data["city"])
+    set_field_js(driver, by_name("city"), clean_city(data["city"]))
     set_field_js(driver, by_name("telephone"), data["phone"])
 
     Select(by_name("country_id")).select_by_value(data["country"])
@@ -1275,12 +1281,19 @@ def place_order(driver, order_id):
         )
 
         wait_payment_ready(driver)
-        set_billing_address(driver)
-        force_totals(driver)
 
+        force_totals(driver)
         wait_loader(driver)
+
+        set_billing_address(driver)
+        wait_loader(driver)
+
+        # verify billing city stayed correct
+        WebDriverWait(driver, 20).until(
+            lambda d: "Moordrecht" in d.page_source and "Postbus 3" in d.page_source
+        )
+
         accept_terms(driver)
-        wait_place_order_enabled(driver)
 
         driver.execute_script(
             """
@@ -1294,10 +1307,9 @@ def place_order(driver, order_id):
         )
 
         click_place_order(driver)
-
+    
         WebDriverWait(driver, 120).until(
-        lambda d:
-            "success" in d.current_url.lower()
+            lambda d: "success" in d.current_url.lower()
             or d.find_elements(By.CSS_SELECTOR, ".checkout-success-container")
             or d.find_elements(By.CSS_SELECTOR, ".checkout-onepage-success")
         )
