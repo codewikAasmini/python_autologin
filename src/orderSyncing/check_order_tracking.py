@@ -10,7 +10,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 ORDER_HISTORY_URL = "https://www.cchobby.nl/sales/order/history/"
 BACKEND_URL = os.getenv("BACKEND_URL", "http://31.97.78.137:3005")
-
+# BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3005")
 
 # ✅ Extract tracking ID from different URL formats
 def extract_tracking_id(href):
