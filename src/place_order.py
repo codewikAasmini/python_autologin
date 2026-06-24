@@ -857,66 +857,8 @@ def set_billing_address(driver):
     time.sleep(2)
     print("✅ Billing address set")
 
-
-def click_place_order(driver):
-    print("🚀 Finalizing order placement")
-
-    handle_save_address_popup(driver)
-    wait_loader(driver)
-    accept_terms(driver)
-
-    WebDriverWait(driver, 40).until(
-        lambda d: d.execute_script(
-            """
-            try {
-                const q = require('Magento_Checkout/js/model/quote');
-                return q.paymentMethod() &&
-                       q.shippingMethod() &&
-                       document.querySelector('button.action.primary.checkout') &&
-                       !document.querySelector('button.action.primary.checkout').disabled;
-            } catch(e) { return false; }
-            """
-        )
-    )
-
-    already_clicked = driver.execute_script(
-        """
-        if (window.__orderSubmitLock) { return true; }
-        window.__orderSubmitLock = true;
-        return false;
-        """
-    )
-    if already_clicked:
-        raise Exception("Order submission already triggered; refusing to click again")
-
-    btn = driver.find_element(By.CSS_SELECTOR, "button.action.primary.checkout")
-    driver.execute_script(
-        """
-        arguments[0].scrollIntoView({block:'center'});
-        arguments[0].click();
-        arguments[0].disabled = true;
-        arguments[0].style.pointerEvents = 'none';
-        """,
-        btn,
-    )
-
-    WebDriverWait(driver, 120).until(
-        lambda d: "success" in d.current_url.lower()
-        or d.execute_script(
-            """
-            const b = document.querySelector('button.action.primary.checkout');
-            return b && b.disabled;
-            """
-        )
-    )
-    print("🎉 Order submitted")
-    return True
-
-
 def add_product_to_cart(driver, sku, qty):
-    """Search for a single SKU and add the given qty to cart."""
     print(f"🔍 Adding SKU={sku} qty={qty}")
-
     driver.get("https://www.cchobby.nl/")
     wait_loader(driver)
 
@@ -976,6 +918,64 @@ def add_product_to_cart(driver, sku, qty):
     print(f"🛒 SKU {sku} added to cart")
 
 
+
+def click_place_order(driver):
+    print("🚀 Finalizing order placement")
+
+    handle_save_address_popup(driver)
+    wait_loader(driver)
+    accept_terms(driver)
+
+    WebDriverWait(driver, 40).until(
+        lambda d: d.execute_script(
+            """
+            try {
+                const q = require('Magento_Checkout/js/model/quote');
+                return q.paymentMethod() &&
+                       q.shippingMethod() &&
+                       document.querySelector('button.action.primary.checkout') &&
+                       !document.querySelector('button.action.primary.checkout').disabled;
+            } catch(e) { return false; }
+            """
+        )
+    )
+
+    already_clicked = driver.execute_script(
+        """
+        if (window.__orderSubmitLock) { return true; }
+        window.__orderSubmitLock = true;
+        return false;
+        """
+    )
+    if already_clicked:
+        raise Exception("Order submission already triggered; refusing to click again")
+
+    btn = driver.find_element(By.CSS_SELECTOR, "button.action.primary.checkout")
+    driver.execute_script(
+        """
+        arguments[0].scrollIntoView({block:'center'});
+        arguments[0].click();
+        arguments[0].disabled = true;
+        arguments[0].style.pointerEvents = 'none';
+        """,
+        btn,
+    )
+
+    WebDriverWait(driver, 120).until(
+        lambda d: "success" in d.current_url.lower()
+        or d.execute_script(
+            """
+            const b = document.querySelector('button.action.primary.checkout');
+            return b && b.disabled;
+            """
+        )
+    )
+    print("🎉 Order submitted")
+    return True
+
+
+
+
 # =====================================================
 # MAIN FLOW
 # =====================================================
@@ -1002,6 +1002,9 @@ def place_order(driver, order_id):
         for line in data["products"]:
             sku = str(line["sku"]).strip()
             qty = int(line["qty"])
+            print("PROCESSING SKU:", sku)
+            print("PROCESSING QTY:", qty)
+
             add_product_to_cart(driver, sku, qty)
 
         # --------------------------------------------------
