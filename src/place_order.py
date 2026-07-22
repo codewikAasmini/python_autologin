@@ -558,7 +558,7 @@ def select_bank_transfer(driver):
     print("💳 Selecting Bankoverschrijving...")
 
     radio = WebDriverWait(driver, 40).until(
-        EC.presence_of_element_located((By.ID, "banktransfer"))
+        EC.presence_of_element_located((By.ID, "checkmo"))
     )
 
     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", radio)
@@ -579,7 +579,7 @@ def select_bank_transfer(driver):
             try {
                 const q = require('Magento_Checkout/js/model/quote');
                 return q.paymentMethod() &&
-                       q.paymentMethod().method === 'banktransfer';
+                       q.paymentMethod().method === 'checkmo';
             } catch(e) { return false; }
             """
         )
@@ -614,7 +614,7 @@ def force_banktransfer_js(driver):
             const service = require('Magento_Checkout/js/model/payment-service');
             const select = require('Magento_Checkout/js/action/select-payment-method');
             const methods = service.getAvailablePaymentMethods();
-            methods.forEach(m => { if (m.method === 'banktransfer') { select(m); } });
+            methods.forEach(m => { if (m.method === 'checkmo') { select(m); } });
         } catch(e) { console.log(e); }
         """
     )
@@ -669,13 +669,22 @@ def force_totals(driver):
 
 
 def accept_terms(driver):
-    driver.execute_script(
-        """
+    WebDriverWait(driver, 30).until(
+        lambda d: len(
+            d.find_elements(By.CSS_SELECTOR,
+                ".checkout-agreement input[type='checkbox']")
+        ) > 0
+    )
+
+    driver.execute_script("""
         document.querySelectorAll(
             '.checkout-agreement input[type="checkbox"]'
-        ).forEach(cb => { if (!cb.checked) cb.click(); });
-        """
-    )
+        ).forEach(cb=>{
+            if(!cb.checked){
+                cb.click();
+            }
+        });
+    """)
 
 
 def set_field_js(driver, el, value):
@@ -1054,7 +1063,7 @@ def place_order(driver, order_id):
                 try {
                     const q = require('Magento_Checkout/js/model/quote');
                     return q.paymentMethod() &&
-                           q.paymentMethod().method === 'banktransfer';
+                           q.paymentMethod().method === 'checkmo';
                 } catch(e) { return false; }
                 """
             )
