@@ -886,8 +886,21 @@ def add_product_to_cart(driver, sku, qty):
     )
 
     form = WebDriverWait(driver, 20).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "form[data-role='tocart-form']"))
+    EC.presence_of_element_located(
+        (
+            By.CSS_SELECTOR,
+            f"form[data-role='tocart-form'][data-product-sku='{sku}']"
+        )
+        )
     )
+    found_sku = form.get_attribute("data-product-sku")
+
+    if str(found_sku).strip() != str(sku).strip():
+        raise Exception(
+            f"❌ SKU mismatch! Requested={sku}, Found={found_sku}"
+        )
+
+    print(f"✅ Exact product found: SKU={found_sku}")
 
     # Set quantity via the + button if qty > 1
     if qty > 1:
