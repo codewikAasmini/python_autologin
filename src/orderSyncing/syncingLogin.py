@@ -53,7 +53,7 @@ except Exception as e:
 print("\n========== END DEBUG ==========\n")
 
 def find_visible_element(driver, xpath):
-elements = driver.find_elements(By.XPATH, xpath)
+    elements = driver.find_elements(By.XPATH, xpath)
 
 for element in elements:
     try:
@@ -65,7 +65,7 @@ for element in elements:
 return None
 
 def login():
-driver = None
+    driver = None
 
 try:
     print("========== STARTING SELENIUM ==========")
