@@ -11,8 +11,6 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.remote.webdriver import WebDriver
 import os
 import subprocess
-import traceback
-from datetime import datetime
 
 load_dotenv()
 
@@ -116,13 +114,7 @@ def login():
         "//button[@id='send2' and contains(@class, 'primary')]"
     )
     print("Login button found.")
-    time.sleep(1)
-    print("Button displayed:", login_btn.is_displayed())
-    print("Button enabled:", login_btn.is_enabled())
-
     driver.execute_script("arguments[0].click();", login_btn)
-
-    print("Login button clicked.")
     try:
         wait.until(lambda d: d.current_url != LOGIN_URL)
         print("LOGIN SUCCESS")
@@ -140,22 +132,3 @@ def login():
                 pass
 
     return driver
-
-
-
-def save_debug(driver, name):
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        try:
-            driver.save_screenshot(f"/tmp/{name}_{timestamp}.png")
-            print(f"DEBUG screenshot saved: /tmp/{name}_{timestamp}.png")
-        except Exception as e:
-            print(f"Screenshot error: {repr(e)}")
-
-        try:
-            print("DEBUG URL:", driver.current_url)
-            print("DEBUG TITLE:", driver.title)
-            print("DEBUG PAGE SOURCE:")
-            print(driver.page_source[:5000])
-        except Exception:
-            traceback.print_exc()
