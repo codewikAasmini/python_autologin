@@ -455,8 +455,7 @@ try:
                 "Could not read login error:",
                 repr(e)
             )
-
-    return driver
+        raise
 
 except Exception as e:
 
