@@ -16,11 +16,10 @@ load_dotenv()
 LOGIN_URL = os.getenv("SUPPLIER_LOGIN_URL")
 
 def save_debug(driver, name):
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-```
-screenshot_path = f"/tmp/{name}_{timestamp}.png"
-html_path = f"/tmp/{name}_{timestamp}.html"
+    screenshot_path = f"/tmp/{name}_{timestamp}.png"
+    html_path = f"/tmp/{name}_{timestamp}.html"
 
 print("\n========== DEBUG INFO ==========")
 
@@ -52,12 +51,10 @@ except Exception as e:
     print("Could not get browser logs:", repr(e))
 
 print("\n========== END DEBUG ==========\n")
-```
 
 def find_visible_element(driver, xpath):
 elements = driver.find_elements(By.XPATH, xpath)
 
-```
 for element in elements:
     try:
         if element.is_displayed():
@@ -66,12 +63,10 @@ for element in elements:
         continue
 
 return None
-```
 
 def login():
 driver = None
 
-```
 try:
     print("========== STARTING SELENIUM ==========")
 
@@ -349,4 +344,3 @@ except Exception as e:
         save_debug(driver, "login_failed")
 
     raise
-```
