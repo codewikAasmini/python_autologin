@@ -120,6 +120,10 @@ try:
     print("Page opened successfully.")
     print("Current URL:", driver.current_url)
     print("Page title:", driver.title)
+    if "noroute" in driver.current_url:
+        raise Exception(
+            f"Invalid login URL or redirect: {driver.current_url}"
+        )
 
     # ========================================
     # COOKIE POPUP
